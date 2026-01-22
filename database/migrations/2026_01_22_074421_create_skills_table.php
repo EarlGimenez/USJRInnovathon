@@ -11,11 +11,24 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('skills', function (Blueprint $table) {
-            $table->id();
-            $table->string('name')->unique();
-            $table->binary('embedding')->nullable();
-        });
+        // The `skills` table may already exist if it was created outside of
+        // Laravel migrations (e.g. by an ingestion script). Make this migration
+        // resilient so `php artisan migrate` can still succeed.
+        if (! Schema::hasTable('skills')) {
+            Schema::create('skills', function (Blueprint $table) {
+                $table->id();
+                $table->string('name')->unique();
+                $table->binary('embedding')->nullable();
+            });
+
+            return;
+        }
+
+        if (! Schema::hasColumn('skills', 'embedding')) {
+            Schema::table('skills', function (Blueprint $table) {
+                $table->binary('embedding')->nullable();
+            });
+        }
     }
 
     /**

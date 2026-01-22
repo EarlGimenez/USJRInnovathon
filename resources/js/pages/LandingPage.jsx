@@ -13,6 +13,120 @@ export default function LandingPage() {
     const [error, setError] = useState(null);
     const [userProfile, setUserProfile] = useState(null);
 
+    const extractTitleKeywords = (text) => {
+        const raw = String(text || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const stop = new Set([
+            'i','im','me','my','we','our','you','your','they','them','the','a','an','and','or','to','for','of','in','on',
+            'with','at','from','by','about','please','find','look','looking','want','need','show','give','me','courses',
+            'course','seminar','seminars','training','trainings','workshop','workshops','tutorial','tutorials','teach',
+            'teaching','class','classes','program','programs','online','in','person','inperson','hybrid'
+        ]);
+
+        return raw
+            .split(' ')
+            .map((w) => w.trim())
+            .filter((w) => w.length >= 3 && !stop.has(w))
+            .slice(0, 8);
+    };
+
+    const titleMatchesKeywords = (title, keywords) => {
+        const t = String(title || '').toLowerCase();
+        if (!keywords || keywords.length === 0) return true;
+        return keywords.some((k) => t.includes(k));
+    };
+
+    const fetchRelevantJobs = async ({ query, city }) => {
+        try {
+            const res = await axios.get('/api/jobs', {
+                params: {
+                    query: query || '',
+                    city: city || 'Cebu',
+                },
+            });
+            return res.data?.jobs || [];
+        } catch (err) {
+            console.warn('Job listings fetch failed, using mock jobs:', err);
+            // Minimal mock fallback that still reflects the prompt/query
+            return Array(5).fill(null).map((_, i) => ({
+                id: i + 1,
+                title: `${query || 'Job'} Position ${i + 1}`,
+                company: `Company ${i + 1}`,
+                location: city || 'Cebu',
+                type: 'job',
+                isMockData: true,
+            }));
+        }
+    };
+
+    const fetchRelevantTrainings = async ({ query, city, keywords }) => {
+        let eventsList = [];
+        let coursesList = [];
+        try {
+            const [eventsRes, coursesRes] = await Promise.all([
+                axios.get('/api/events', {
+                    params: {
+                        query: query,
+                        city: city || 'Cebu',
+                        limit: 25,
+                    },
+                }),
+                axios.get('/api/courses', {
+                    params: {
+                        query: query,
+                        limit: 25,
+                    },
+                }),
+            ]);
+
+            eventsList = (eventsRes.data?.events || []).filter((e) => titleMatchesKeywords(e.title, keywords));
+            coursesList = (coursesRes.data?.courses || []).filter((c) => titleMatchesKeywords(c.title, keywords));
+
+            // If keyword filtering yields nothing, keep originals so UI isn't empty
+            if (eventsList.length === 0) eventsList = eventsRes.data?.events || [];
+            if (coursesList.length === 0) coursesList = coursesRes.data?.courses || [];
+        } catch (fetchErr) {
+            console.warn('Training listings fetch failed, continuing with empty trainings:', fetchErr);
+            eventsList = [];
+            coursesList = [];
+        }
+
+        return [
+            ...eventsList.map((e) => ({ ...e, mode: e.mode || 'OFFLINE' })),
+            ...coursesList.map((c) => ({ ...c, mode: c.mode || 'ONLINE' })),
+        ];
+    };
+
+    const inferTrainingPreference = (prompt, extracted) => {
+        const p = String(prompt || '').toLowerCase();
+        const fmt = String(extracted?.format || '').toLowerCase();
+
+        const wantsOnline =
+            fmt === 'online' ||
+            p.includes('online') ||
+            p.includes('course') ||
+            p.includes('tutorial') ||
+            p.includes('teach') ||
+            p.includes('coursera') ||
+            p.includes('udemy');
+
+        const wantsInPerson =
+            fmt === 'in-person' ||
+            p.includes('in person') ||
+            p.includes('seminar') ||
+            p.includes('workshop') ||
+            p.includes('event');
+
+        if (wantsOnline && !wantsInPerson) return 'online';
+        if (wantsInPerson && !wantsOnline) return 'in-person';
+        // Default to online for “teaching/tutorial/course” style prompts
+        return wantsOnline ? 'online' : 'in-person';
+    };
+
     // Load user profile on mount
     useEffect(() => {
         loadProfile();
@@ -68,21 +182,44 @@ export default function LandingPage() {
                 // Extract job search parameters
                 extractedData = await jobSearchAgent(prompt);
                 console.log('Extracted job parameters:', extractedData);
-                
-                // Mock job results
-                results = Array(5).fill(null).map((_, i) => ({
-                    id: i + 1,
-                    title: `${extractedData.query || 'Job'} Position ${i + 1}`,
-                    company: `Company ${i + 1}`,
-                    location: extractedData.location,
-                    type: 'job'
+
+                const topicOrPrompt = extractedData.query || prompt;
+                const keywords = [
+                    ...extractTitleKeywords(extractedData.query),
+                    ...extractTitleKeywords(prompt),
+                ];
+                const preferred = inferTrainingPreference(prompt, { format: null });
+
+                // Always populate both jobs + trainings so either tab has relevant results
+                const [jobsList, trainings] = await Promise.all([
+                    fetchRelevantJobs({ query: topicOrPrompt, city: extractedData.location || 'Cebu' }),
+                    fetchRelevantTrainings({
+                        query: topicOrPrompt,
+                        city: extractedData.location || 'Cebu',
+                        keywords,
+                    }),
+                ]);
+
+                results = (jobsList || []).slice(0, 5).map((j, i) => ({
+                    id: j.id || i + 1,
+                    title: j.title,
+                    company: j.company || j.company_name || 'Company',
+                    location: j.location || extractedData.location || 'Cebu',
+                    type: 'job',
                 }));
 
                 setAgenticData({
-                    intent: 'job',
+                    intent: 'JOB_SEARCH',
                     prompt: prompt,
+                    query: topicOrPrompt,
                     extracted_skills: extractedData.skills || [],
-                    results: results,
+                    jobs: jobsList,
+                    trainings,
+                    results,
+                    ui: {
+                        default_tab: 'jobs',
+                        default_seminar_filter: preferred,
+                    },
                     has_skill_gap: false,
                     skill_gaps: [],
                     match_percentage: 100
@@ -101,21 +238,45 @@ export default function LandingPage() {
                 // Extract training search parameters
                 extractedData = await trainingSearchAgent(prompt);
                 console.log('Extracted training parameters:', extractedData);
-                
-                // Mock training results
-                results = Array(5).fill(null).map((_, i) => ({
-                    id: i + 1,
-                    title: `${extractedData.topic || 'Training'} Workshop ${i + 1}`,
-                    organizer: `Provider ${i + 1}`,
-                    location: extractedData.location,
-                    type: 'seminar'
+
+                const topicOrPrompt = extractedData.topic || prompt;
+                const keywords = [
+                    ...extractTitleKeywords(extractedData.topic),
+                    ...extractTitleKeywords(prompt),
+                ];
+                const preferred = inferTrainingPreference(prompt, extractedData);
+
+                const [jobsList, trainings] = await Promise.all([
+                    fetchRelevantJobs({ query: topicOrPrompt, city: extractedData.location || 'Cebu' }),
+                    fetchRelevantTrainings({
+                        query: topicOrPrompt,
+                        city: extractedData.location || 'Cebu',
+                        keywords,
+                    }),
+                ]);
+
+                // Also keep a small “results” list for the loading screen copy
+                results = trainings.slice(0, 5).map((t, i) => ({
+                    id: t.id || i + 1,
+                    title: t.title,
+                    organizer: t.organizer || t.provider || t.platform || 'Provider',
+                    location: t.location || extractedData.location || 'Cebu',
+                    type: 'seminar',
                 }));
 
                 setAgenticData({
-                    intent: 'seminar',
+                    // Keep MapView behavior: training mode should land on seminars tab
+                    intent: 'SKILL_IMPROVEMENT',
                     prompt: prompt,
+                    query: topicOrPrompt,
                     extracted_skills: extractedData.topic ? [extractedData.topic] : [],
-                    results: results,
+                    jobs: jobsList,
+                    trainings,
+                    results,
+                    ui: {
+                        default_tab: 'seminars',
+                        default_seminar_filter: preferred,
+                    },
                     has_skill_gap: false,
                     skill_gaps: [],
                     match_percentage: 100
