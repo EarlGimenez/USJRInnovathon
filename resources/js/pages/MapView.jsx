@@ -309,21 +309,16 @@ export default function MapView() {
                 </div>
             )}
             
-            {/* Header - Responsive: Compact on mobile, expanded on desktop */}
-            <header className="bg-white shadow-sm border-b border-gray-200 z-20">
+            {/* Controls Bar */}
+            <div className="bg-white border-b border-gray-200 z-20">
                 <div className="px-4 py-3 lg:px-6 lg:py-4">
                     <div className="flex items-center justify-between mb-3">
-                        <div>
-                            <Link to="/" className="hover:opacity-80 transition-opacity">
-                                <img src="/lookal_logo.png" alt="Lookal" className="h-12 lg:h-16" />
-                            </Link>
-                            <p className="text-xs flex items-center gap-1" style={{ color: '#181818', opacity: 0.7 }}>
-                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                </svg>
-                                {userCity}, Philippines
-                            </p>
-                        </div>
+                        <p className="text-sm flex items-center gap-1" style={{ color: '#181818', opacity: 0.7 }}>
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                            </svg>
+                            {userCity}, Philippines
+                        </p>
                         <ToggleTabs 
                             activeTab={activeTab}
                             onTabChange={setActiveTab}
@@ -369,7 +364,7 @@ export default function MapView() {
                         </div>
                     )}
                 </div>
-            </header>
+            </div>
 
             {/* Main Content - Responsive Layout */}
             {/* Mobile: Vertical (map top, listings bottom) */}

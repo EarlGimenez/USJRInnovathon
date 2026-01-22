@@ -7,11 +7,13 @@ import SeminarDetails from '../pages/SeminarDetails';
 import ProfileView from '../pages/ProfileView';
 import ApplyPage from '../pages/ApplyPage';
 import { SkillProvider } from '../context/SkillContext';
+import Navbar from './ui/Navbar';
 
 export default function App() {
     return (
         <SkillProvider>
             <div className="min-h-screen bg-gray-50">
+                <Navbar />
                 <Routes>
                     <Route path="/" element={<LandingPage />} />
                     <Route path="/map" element={<MapView />} />
