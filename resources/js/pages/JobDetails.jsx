@@ -196,6 +196,12 @@ export default function JobDetails() {
             ? '#eab308'
             : '#ef4444';
 
+    const relevantTrainingOfSuccessfulHires = matchPercentage < 60
+        ? 90
+        : matchPercentage < 80
+            ? 60
+            : 30;
+
     const matchedSkills = Array.isArray(job?.match?.matched_skills) ? job.match.matched_skills : [];
     const missingSkills = Array.isArray(job?.match?.missing_skills) ? job.match.missing_skills : [];
 
@@ -335,6 +341,18 @@ export default function JobDetails() {
                                 </div>
                             </div>
                         )}
+                    </div>
+                </section>
+
+                {/* Relevant Training of Successful Hires (Static Numeric) */}
+                <section className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
+                        <span className="w-1 h-5 mr-2 rounded" style={{ backgroundColor: '#114124' }}></span>
+                        Relevant Training of Successful Hires
+                    </h3>
+                    <div className="bg-gray-50 rounded-lg p-4 flex items-center justify-between w-50">
+                        <p className="text-sm text-gray-700">Value</p>
+                        <p className="text-2xl font-bold text-gray-900">{relevantTrainingOfSuccessfulHires}</p>
                     </div>
                 </section>
             </div>
