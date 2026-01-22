@@ -42,6 +42,7 @@ function heuristicTrainingParams(prompt) {
         location: "Cebu",
         level: null,
         format: null,
+        budget: null,
     };
 }
 
@@ -129,6 +130,7 @@ export async function trainingSearchAgent(prompt) {
 - location: city name (default: "Cebu")
 - level: beginner, intermediate, advanced, or null
 - format: online, in-person, hybrid, or null
+- budget: "free", "cheap", or null (if the user asks for budget-friendly/cheap/free options)
 
 Respond with ONLY a JSON object with these fields.`),
         new HumanMessage(prompt)
@@ -142,7 +144,8 @@ Respond with ONLY a JSON object with these fields.`),
             topic: params.topic || '',
             location: params.location || 'Cebu',
             level: params.level || null,
-            format: params.format || null
+            format: params.format || null,
+            budget: params.budget || null,
         };
     } catch (error) {
         console.error('Training search agent error:', error);

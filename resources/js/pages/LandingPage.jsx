@@ -176,7 +176,41 @@ export default function LandingPage() {
         }
     };
 
-    const fetchRelevantTrainings = async ({ query, city, keywords }) => {
+    const fetchRelevantTrainings = async ({ query, city, keywords, budgetPreference }) => {
+        const toPriceValue = (item) => {
+            if (item?.isFree === true) return 0;
+            const raw = String(item?.price ?? item?.cost ?? item?.fee ?? '').toLowerCase();
+            if (!raw) return Number.POSITIVE_INFINITY;
+            if (raw.includes('free')) return 0;
+
+            const digits = raw.replace(/[^0-9.]/g, '');
+            const n = Number(digits);
+            return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+        };
+
+        const applyBudgetPreference = (items) => {
+            if (!budgetPreference) return items;
+
+            const withPrice = (Array.isArray(items) ? items : []).map((it) => ({
+                ...it,
+                _priceValue: toPriceValue(it),
+            }));
+
+            if (budgetPreference === 'free') {
+                const freeOnly = withPrice.filter((it) => it._priceValue === 0);
+                if (freeOnly.length > 0) {
+                    return freeOnly
+                        .sort((a, b) => a._priceValue - b._priceValue)
+                        .map(({ _priceValue, ...rest }) => rest);
+                }
+                // If no free results, fall back to cheapest-first ordering.
+            }
+
+            return withPrice
+                .sort((a, b) => a._priceValue - b._priceValue)
+                .map(({ _priceValue, ...rest }) => rest);
+        };
+
         let eventsList = [];
         let coursesList = [];
         try {
@@ -202,6 +236,10 @@ export default function LandingPage() {
             // If keyword filtering yields nothing, keep originals so UI isn't empty
             if (eventsList.length === 0) eventsList = eventsRes.data?.events || [];
             if (coursesList.length === 0) coursesList = coursesRes.data?.courses || [];
+
+            // If the user asked for budget-friendly trainings, prioritize them.
+            eventsList = applyBudgetPreference(eventsList);
+            coursesList = applyBudgetPreference(coursesList);
         } catch (fetchErr) {
             console.warn('Training listings fetch failed, continuing with empty trainings:', fetchErr);
             eventsList = [];
@@ -238,6 +276,34 @@ export default function LandingPage() {
         if (wantsInPerson && !wantsOnline) return 'in-person';
         // Default to online for “teaching/tutorial/course” style prompts
         return wantsOnline ? 'online' : 'in-person';
+    };
+
+    const inferBudgetPreference = (prompt, extracted) => {
+        const raw = String(extracted?.budget || '').toLowerCase().trim();
+        if (raw === 'free' || raw === 'cheap') return raw;
+
+        const p = String(prompt || '').toLowerCase();
+        const wantsFree =
+            p.includes('free') ||
+            p.includes('no cost') ||
+            p.includes('no-cost') ||
+            p.includes('without paying') ||
+            p.includes('zero cost');
+
+        const wantsCheap =
+            p.includes('budget friendly') ||
+            p.includes('budget-friendly') ||
+            p.includes('budget') ||
+            p.includes('cheap') ||
+            p.includes('cheapest') ||
+            p.includes('affordable') ||
+            p.includes('low cost') ||
+            p.includes('low-cost') ||
+            p.includes('inexpensive');
+
+        if (wantsFree) return 'free';
+        if (wantsCheap) return 'cheap';
+        return null;
     };
 
     // Load user profile on mount
@@ -320,6 +386,7 @@ export default function LandingPage() {
                     ...extractTitleKeywords(prompt),
                 ];
                 const preferred = inferTrainingPreference(prompt, { format: null });
+                const budgetPreference = inferBudgetPreference(prompt, null);
 
                 // Always populate both jobs + trainings so either tab has relevant results
                 const [jobsList, trainings] = await Promise.all([
@@ -333,6 +400,7 @@ export default function LandingPage() {
                         query: topicOrPrompt,
                         city: extractedData.location || 'Cebu',
                         keywords,
+                        budgetPreference,
                     }),
                 ]);
 
@@ -411,6 +479,7 @@ export default function LandingPage() {
                     ...extractTitleKeywords(prompt),
                 ];
                 const preferred = inferTrainingPreference(prompt, extractedData);
+                const budgetPreference = inferBudgetPreference(prompt, extractedData);
 
                 const [jobsList, trainings] = await Promise.all([
                     fetchRelevantJobs({
@@ -424,6 +493,7 @@ export default function LandingPage() {
                         query: topicOrPrompt,
                         city: extractedData.location || 'Cebu',
                         keywords,
+                        budgetPreference,
                     }),
                 ]);
 
