@@ -24,7 +24,9 @@ const ProfileView = () => {
         organization: '',
         description: '',
         startDate: '',
-        endDate: ''
+        endDate: '',
+        file: null,
+        fileName: ''
     });
 
     // Handle Profile Info Changes
@@ -61,6 +63,21 @@ const ProfileView = () => {
         setCurrentCredential(prev => ({ ...prev, [field]: value }));
     };
 
+    const handleCredentialFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setCurrentCredential(prev => ({ 
+                    ...prev, 
+                    file: reader.result,
+                    fileName: file.name
+                }));
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const addCredential = () => {
         if (currentCredential.title && currentCredential.organization) {
             setCredentials(prev => [...prev, { ...currentCredential, id: Date.now() }]);
@@ -70,7 +87,9 @@ const ProfileView = () => {
                 organization: '',
                 description: '',
                 startDate: '',
-                endDate: ''
+                endDate: '',
+                file: null,
+                fileName: ''
             });
             setShowCredentialForm(false);
         }
@@ -92,89 +111,118 @@ const ProfileView = () => {
     };
 
     return (
-        <div className="profile-view">
-            <div className="profile-container">
-                <h1>My Profile</h1>
+        <div className="min-h-screen bg-gray-50">
+            <div className="max-w-4xl mx-auto px-4 py-6">
+                {/* Header */}
+                <header className="mb-6">
+                    <h1 className="text-xl font-bold" style={{ color: '#181818' }}>My Profile</h1>
+                </header>
 
                 {/* Profile Card Section */}
-                <section className="profile-section">
-                    <h2>Profile Information</h2>
-                    <div className="profile-inputs">
-                        <div className="input-group">
-                            <label>First Name</label>
-                            <input
-                                type="text"
-                                value={profile.firstName}
-                                onChange={(e) => handleProfileChange('firstName', e.target.value)}
-                                placeholder="Enter first name"
-                            />
+                <section className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6">
+                    <h2 className="text-lg font-semibold text-gray-800 mb-4">Profile Information</h2>
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                                <input
+                                    type="text"
+                                    value={profile.firstName}
+                                    onChange={(e) => handleProfileChange('firstName', e.target.value)}
+                                    placeholder="Enter first name"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                                <input
+                                    type="text"
+                                    value={profile.lastName}
+                                    onChange={(e) => handleProfileChange('lastName', e.target.value)}
+                                    placeholder="Enter last name"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                />
+                            </div>
                         </div>
-                        <div className="input-group">
-                            <label>Last Name</label>
-                            <input
-                                type="text"
-                                value={profile.lastName}
-                                onChange={(e) => handleProfileChange('lastName', e.target.value)}
-                                placeholder="Enter last name"
-                            />
-                        </div>
-                        <div className="input-group">
-                            <label>Profile Picture</label>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Profile Picture</label>
                             <input
                                 type="file"
                                 accept="image/*"
                                 onChange={(e) => handleImageUpload('profilePicture', e)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                         </div>
-                        <div className="input-group">
-                            <label>Cover Photo</label>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Cover Photo</label>
                             <input
                                 type="file"
                                 accept="image/*"
                                 onChange={(e) => handleImageUpload('coverPhoto', e)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                         </div>
                     </div>
                     {profile.firstName && profile.lastName && (
-                        <ProfileCard
-                            firstName={profile.firstName}
-                            lastName={profile.lastName}
-                            profilePicture={profile.profilePicture}
-                            coverPhoto={profile.coverPhoto}
-                        />
+                        <div className="mt-6">
+                            <ProfileCard
+                                firstName={profile.firstName}
+                                lastName={profile.lastName}
+                                profilePicture={profile.profilePicture}
+                                coverPhoto={profile.coverPhoto}
+                            />
+                        </div>
                     )}
                 </section>
 
                 {/* Skills Section */}
-                <section className="skills-section">
-                    <h2>Skills</h2>
-                    <div className="skills-input">
+                <section className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6">
+                    <h2 className="text-lg font-semibold text-gray-800 mb-4">Skills</h2>
+                    <div className="flex gap-2 mb-4">
                         <input
                             type="text"
                             value={newSkill}
                             onChange={(e) => setNewSkill(e.target.value)}
                             placeholder="Enter a skill"
                             onKeyPress={(e) => e.key === 'Enter' && addSkill()}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
-                        <button onClick={addSkill} className="btn-add">Add Skill</button>
+                        <button 
+                            onClick={addSkill} 
+                            className="px-4 py-2 text-white rounded-lg transition-colors font-medium"
+                            style={{ backgroundColor: '#114124' }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
+                        >
+                            Add Skill
+                        </button>
                     </div>
-                    <div className="skills-list">
+                    <div className="flex flex-wrap gap-2">
                         {skills.map((skill, index) => (
-                            <div key={index} className="skill-tag">
-                                <span>{skill}</span>
-                                <button onClick={() => removeSkill(index)} className="btn-remove">×</button>
+                            <div key={index} className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ backgroundColor: '#e8f5e9', color: '#114124', border: '1px solid #a5d6a7' }}>
+                                <span className="text-sm font-medium">{skill}</span>
+                                <button 
+                                    onClick={() => removeSkill(index)} 
+                                    className="font-bold text-lg leading-none"
+                                    style={{ color: '#114124' }}
+                                >
+                                    ×
+                                </button>
                             </div>
                         ))}
                     </div>
                 </section>
 
                 {/* Credentials Section */}
-                <section className="credentials-section">
-                    <div className="section-header">
-                        <h2>Credentials</h2>
+                <section className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg font-semibold text-gray-800">Credentials</h2>
                         <button 
                             onClick={() => setShowCredentialForm(!showCredentialForm)} 
-                            className="btn-add-credential"
+                            className="px-4 py-2 text-white rounded-lg transition-colors font-medium text-sm"
+                            style={{ backgroundColor: '#114124' }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
                         >
                             {showCredentialForm ? 'Cancel' : 'Add Credential'}
                         </button>
@@ -182,74 +230,118 @@ const ProfileView = () => {
 
                     {/* Credential Form */}
                     {showCredentialForm && (
-                        <div className="credential-form">
-                            <div className="input-group">
-                                <label>Type</label>
-                                <select
-                                    value={currentCredential.type}
-                                    onChange={(e) => handleCredentialChange('type', e.target.value)}
+                        <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                                    <select
+                                        value={currentCredential.type}
+                                        onChange={(e) => handleCredentialChange('type', e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                                        onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                        onBlur={(e) => e.target.style.borderColor = ''}
+                                    >
+                                        <option value="work">Work Experience</option>
+                                        <option value="certificate">Certificate</option>
+                                        <option value="project">Project</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
+                                    <input
+                                        type="text"
+                                        value={currentCredential.title}
+                                        onChange={(e) => handleCredentialChange('title', e.target.value)}
+                                        placeholder="e.g., Software Engineer, AWS Certification, E-commerce Website"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                                        onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                        onBlur={(e) => e.target.style.borderColor = ''}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Organization/Company</label>
+                                    <input
+                                        type="text"
+                                        value={currentCredential.organization}
+                                        onChange={(e) => handleCredentialChange('organization', e.target.value)}
+                                        placeholder="e.g., Google, Coursera, Personal Project"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                                        onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                        onBlur={(e) => e.target.style.borderColor = ''}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                                    <textarea
+                                        value={currentCredential.description}
+                                        onChange={(e) => handleCredentialChange('description', e.target.value)}
+                                        placeholder="Describe your role, achievements, or project details"
+                                        rows="4"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                                        onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                        onBlur={(e) => e.target.style.borderColor = ''}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                                        <input
+                                            type="month"
+                                            value={currentCredential.startDate}
+                                            onChange={(e) => handleCredentialChange('startDate', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                                            onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                            onBlur={(e) => e.target.style.borderColor = ''}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                                        <input
+                                            type="month"
+                                            value={currentCredential.endDate}
+                                            onChange={(e) => handleCredentialChange('endDate', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:border-transparent"
+                                            onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                            onBlur={(e) => e.target.style.borderColor = ''}
+                                        />
+                                        <small className="text-gray-500 text-xs mt-1 block">Leave empty if currently ongoing</small>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Upload Certificate/Document (PNG or PDF)
+                                    </label>
+                                    <input
+                                        type="file"
+                                        accept=".png,.pdf,image/png,application/pdf"
+                                        onChange={handleCredentialFileUpload}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 text-sm"
+                                        onFocus={(e) => e.target.style.borderColor = '#114124'}
+                                        onBlur={(e) => e.target.style.borderColor = ''}
+                                    />
+                                    {currentCredential.fileName && (
+                                        <p className="text-sm mt-2" style={{ color: '#114124' }}>
+                                            ✓ {currentCredential.fileName}
+                                        </p>
+                                    )}
+                                </div>
+                                <button 
+                                    onClick={addCredential} 
+                                    className="w-full px-4 py-2 text-white rounded-lg transition-colors font-medium"
+                                    style={{ backgroundColor: '#114124' }}
+                                    onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                                    onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
                                 >
-                                    <option value="work">Work Experience</option>
-                                    <option value="certificate">Certificate</option>
-                                    <option value="project">Project</option>
-                                </select>
+                                    Save Credential
+                                </button>
                             </div>
-                            <div className="input-group">
-                                <label>Title</label>
-                                <input
-                                    type="text"
-                                    value={currentCredential.title}
-                                    onChange={(e) => handleCredentialChange('title', e.target.value)}
-                                    placeholder="e.g., Software Engineer, AWS Certification, E-commerce Website"
-                                />
-                            </div>
-                            <div className="input-group">
-                                <label>Organization/Company</label>
-                                <input
-                                    type="text"
-                                    value={currentCredential.organization}
-                                    onChange={(e) => handleCredentialChange('organization', e.target.value)}
-                                    placeholder="e.g., Google, Coursera, Personal Project"
-                                />
-                            </div>
-                            <div className="input-group">
-                                <label>Description</label>
-                                <textarea
-                                    value={currentCredential.description}
-                                    onChange={(e) => handleCredentialChange('description', e.target.value)}
-                                    placeholder="Describe your role, achievements, or project details"
-                                    rows="4"
-                                />
-                            </div>
-                            <div className="date-inputs">
-                                <div className="input-group">
-                                    <label>Start Date</label>
-                                    <input
-                                        type="month"
-                                        value={currentCredential.startDate}
-                                        onChange={(e) => handleCredentialChange('startDate', e.target.value)}
-                                    />
-                                </div>
-                                <div className="input-group">
-                                    <label>End Date</label>
-                                    <input
-                                        type="month"
-                                        value={currentCredential.endDate}
-                                        onChange={(e) => handleCredentialChange('endDate', e.target.value)}
-                                    />
-                                    <small>Leave empty if currently ongoing</small>
-                                </div>
-                            </div>
-                            <button onClick={addCredential} className="btn-save-credential">
-                                Save Credential
-                            </button>
                         </div>
                     )}
 
                     {/* Credentials List */}
-                    <div className="credentials-list">
+                    <div className="space-y-3">
                         {credentials.length === 0 ? (
-                            <p className="empty-state">No credentials added yet. Click "Add Credential" to get started.</p>
+                            <p className="text-gray-500 text-center py-8">No credentials added yet. Click "Add Credential" to get started.</p>
                         ) : (
                             credentials.map((cred) => (
                                 <CredentialCard
@@ -260,6 +352,8 @@ const ProfileView = () => {
                                     description={cred.description}
                                     startDate={cred.startDate}
                                     endDate={cred.endDate}
+                                    file={cred.file}
+                                    fileName={cred.fileName}
                                     onDelete={() => deleteCredential(cred.id)}
                                 />
                             ))
@@ -268,8 +362,14 @@ const ProfileView = () => {
                 </section>
 
                 {/* Save Button */}
-                <div className="profile-actions">
-                    <button onClick={saveProfile} className="btn-save-profile">
+                <div className="flex justify-end">
+                    <button 
+                        onClick={saveProfile} 
+                        className="px-6 py-3 text-white rounded-lg transition-colors font-medium shadow-sm"
+                        style={{ backgroundColor: '#114124' }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
+                    >
                         Save Profile
                     </button>
                 </div>

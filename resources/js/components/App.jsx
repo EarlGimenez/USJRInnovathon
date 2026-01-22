@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import MapView from '../pages/MapView';
 import JobDetails from '../pages/JobDetails';
 import SeminarDetails from '../pages/SeminarDetails';
+import ProfileView from '../pages/ProfileView';
 import { SkillProvider } from '../context/SkillContext';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
                     <Route path="/" element={<MapView />} />
                     <Route path="/job/:id" element={<JobDetails />} />
                     <Route path="/seminar/:id" element={<SeminarDetails />} />
+                    <Route path="/profile" element={<ProfileView />} />
                 </Routes>
             </div>
         </SkillProvider>
