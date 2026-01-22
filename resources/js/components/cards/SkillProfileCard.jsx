@@ -7,15 +7,54 @@ export default function SkillProfileCard({ skills, compact = false }) {
 
     if (!skills) return null;
 
-    const getSkillColor = (value) => {
-        if (value >= 80) return 'bg-green-500';
-        if (value >= 60) return 'bg-yellow-500';
-        if (value >= 40) return 'bg-orange-500';
-        return 'bg-red-500';
+    const getValidationStatus = (value) => {
+        // Preferred: if profile stores validation metadata.
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            if (value.credential_validated || value.credentialValidated || value.validation === 'credential') {
+                return 'credential';
+            }
+            if (value.work_validated || value.workValidated || value.validation === 'work') {
+                return 'work';
+            }
+            return 'none';
+        }
+
+        // If stored as a string status.
+        if (typeof value === 'string') {
+            const v = value.toLowerCase();
+            if (v.includes('credential')) return 'credential';
+            if (v.includes('work')) return 'work';
+            return 'none';
+        }
+
+        // Demo fallback: map numeric proficiency into a validation-like label.
+        // (Keeps reset skills working without changing the underlying session model.)
+        if (typeof value === 'number' && !Number.isNaN(value)) {
+            if (value >= 80) return 'credential';
+            if (value >= 60) return 'work';
+            return 'none';
+        }
+
+        return 'none';
     };
 
-    const averageSkill = Math.round(
-        Object.values(skills).reduce((a, b) => a + b, 0) / Object.keys(skills).length
+    const getStatusBadge = (status) => {
+        if (status === 'credential') {
+            return { label: 'Credential validated', className: 'bg-green-100 text-green-800' };
+        }
+        if (status === 'work') {
+            return { label: 'Work experience validated', className: 'bg-yellow-100 text-yellow-800' };
+        }
+        return { label: 'No validations', className: 'bg-gray-100 text-gray-700' };
+    };
+
+    const counts = Object.values(skills).reduce(
+        (acc, v) => {
+            const status = getValidationStatus(v);
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        },
+        { credential: 0, work: 0, none: 0 }
     );
 
     if (compact && !expanded) {
@@ -25,11 +64,13 @@ export default function SkillProfileCard({ skills, compact = false }) {
                 className="bg-white rounded-lg shadow-lg p-3 flex items-center gap-2 hover:shadow-xl transition-shadow"
             >
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
-                    {averageSkill}
+                    {counts.credential + counts.work}
                 </div>
                 <div className="text-left">
                     <p className="text-xs text-gray-500">Your Skills</p>
-                    <p className="text-sm font-semibold text-gray-800">{averageSkill}% Avg</p>
+                    <p className="text-sm font-semibold text-gray-800">
+                        {counts.credential} cred • {counts.work} work
+                    </p>
                 </div>
             </button>
         );
@@ -52,27 +93,29 @@ export default function SkillProfileCard({ skills, compact = false }) {
             </div>
 
             <div className="space-y-2">
-                {Object.entries(skills).map(([skill, value]) => (
-                    <div key={skill}>
-                        <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-600">{skill}</span>
-                            <span className="font-medium text-gray-800">{value}%</span>
+                {Object.entries(skills).map(([skill, value]) => {
+                    const status = getValidationStatus(value);
+                    const badge = getStatusBadge(status);
+
+                    return (
+                        <div key={skill} className="flex items-center justify-between gap-3">
+                            <span className="text-sm text-gray-700">{skill}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.className}`}>
+                                {badge.label}
+                            </span>
                         </div>
-                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                                className={`h-full ${getSkillColor(value)} rounded-full transition-all duration-500`}
-                                style={{ width: `${value}%` }}
-                            />
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             <div className="mt-4 pt-3 border-t border-gray-100">
                 <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">Overall Average</span>
-                    <span className="text-lg font-bold text-blue-600">{averageSkill}%</span>
+                    <span className="text-sm text-gray-500">Validated skills</span>
+                    <span className="text-lg font-bold text-blue-600">{counts.credential + counts.work}</span>
                 </div>
+                <p className="text-xs text-gray-400 mt-1">
+                    {counts.credential} credential • {counts.work} work • {counts.none} none
+                </p>
             </div>
 
             <button

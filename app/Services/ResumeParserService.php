@@ -112,9 +112,18 @@ class ResumeParserService
                 'TEMP' => getenv('TEMP'),
                 'TMP' => getenv('TMP'),
                 'OPENAI_API_KEY' => $apiKey,
+                'RESUME_PARSER_DEBUG' => '1',  // Enable debug logging in Python script
             ];
             
             $result = Process::timeout(120)->env($env)->run($command);
+
+            // Log stderr debug output from Python script
+            $stderrOutput = $result->errorOutput();
+            if (!empty($stderrOutput)) {
+                Log::info('Resume parser debug output (stderr)', [
+                    'debug' => $stderrOutput
+                ]);
+            }
 
             // Clean up temp file
             $this->cleanup($tempFilePath);
@@ -122,8 +131,9 @@ class ResumeParserService
             if (!$result->successful()) {
                 Log::error('Resume parser failed', [
                     'exitCode' => $result->exitCode(),
-                    'output' => $result->output(),
-                    'error' => $result->errorOutput()
+                    'stdout' => $result->output(),
+                    'stderr' => $stderrOutput,
+                    'command' => $command
                 ]);
 
                 // Try to parse error from output
@@ -133,25 +143,34 @@ class ResumeParserService
                 if ($jsonOutput && isset($jsonOutput['error'])) {
                     return [
                         'success' => false,
-                        'error' => $jsonOutput['error']
+                        'error' => $jsonOutput['error'],
+                        'debug' => $stderrOutput  // Include debug info for troubleshooting
                     ];
                 }
 
                 return [
                     'success' => false,
-                    'error' => 'Failed to parse resume. Please try again or enter your information manually.'
+                    'error' => 'Failed to parse resume. Please try again or enter your information manually.',
+                    'debug' => $stderrOutput  // Include debug info for troubleshooting
                 ];
             }
 
             // Parse JSON output
             $output = $result->output();
+            Log::info('Resume parser stdout', ['output' => substr($output, 0, 1000)]);
+            
             $parsedData = json_decode($output, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                Log::error('Failed to parse resume parser output', ['output' => $output]);
+                Log::error('Failed to parse resume parser output', [
+                    'jsonError' => json_last_error_msg(),
+                    'output' => $output,
+                    'stderr' => $stderrOutput
+                ]);
                 return [
                     'success' => false,
-                    'error' => 'Failed to parse resume data. Please try again.'
+                    'error' => 'Failed to parse resume data. Please try again.',
+                    'debug' => $stderrOutput
                 ];
             }
 

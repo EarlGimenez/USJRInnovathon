@@ -29,16 +29,33 @@ class CourseController extends Controller
         if (!empty($skills) && is_array($skills)) {
             $courses = $this->courseService->getRecommendedCourses($skills, $limit);
             
-            return response()->json([
-                'courses' => $courses,
-                'type' => 'recommended',
-                'message' => 'Courses recommended based on your skill gaps'
-            ]);
+            // Find weak skills for display
+            $weakSkills = [];
+            foreach ($skills as $skill => $level) {
+                if ($level < 50) {
+                    $weakSkills[$skill] = $level;
+                }
+            }
+            asort($weakSkills);
+            
+            // If we got courses from weak skills, return them
+            if (!empty($courses)) {
+                return response()->json([
+                    'courses' => $courses,
+                    'weakSkills' => array_keys(array_slice($weakSkills, 0, 3, true)),
+                    'type' => 'recommended',
+                    'message' => 'Courses recommended based on your skill gaps'
+                ]);
+            }
+            
+            // If no weak skills or no courses found, fall through to query-based search
         }
 
         // If query provided, search for specific courses
         if ($query) {
-            $courses = $this->courseService->searchCourses($query, $limit);
+            // Try to map query to a skill category
+            $skill = $this->mapQueryToSkill($query);
+            $courses = $this->courseService->searchCourses($skill ?: $query, $limit);
             
             return response()->json([
                 'courses' => $courses,
@@ -55,6 +72,54 @@ class CourseController extends Controller
             'courses' => array_slice($courses, 0, $limit),
             'type' => 'popular'
         ]);
+    }
+
+    /**
+     * Map search query to a skill category
+     */
+    protected function mapQueryToSkill(string $query): ?string
+    {
+        $queryLower = strtolower($query);
+        
+        $mappings = [
+            'design' => 'Design',
+            'ui' => 'Design',
+            'ux' => 'Design',
+            'graphic' => 'Design',
+            'figma' => 'Prototyping',
+            'prototype' => 'Prototyping',
+            'wireframe' => 'Prototyping',
+            'code' => 'Programming',
+            'programming' => 'Programming',
+            'developer' => 'Programming',
+            'javascript' => 'Programming',
+            'python' => 'Programming',
+            'data' => 'Data Analysis',
+            'analytics' => 'Data Analysis',
+            'sql' => 'Data Analysis',
+            'excel' => 'Data Analysis',
+            'communication' => 'Communication',
+            'speaking' => 'Communication',
+            'writing' => 'Communication',
+            'leadership' => 'Leadership',
+            'management' => 'Leadership',
+            'agile' => 'Leadership',
+            'scrum' => 'Leadership',
+            'research' => 'Research',
+            'user research' => 'Research',
+            'git' => 'Tools',
+            'docker' => 'Tools',
+            'aws' => 'Tools',
+            'cloud' => 'Tools',
+        ];
+
+        foreach ($mappings as $keyword => $skill) {
+            if (str_contains($queryLower, $keyword)) {
+                return $skill;
+            }
+        }
+
+        return null;
     }
 
     /**

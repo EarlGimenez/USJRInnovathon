@@ -28,6 +28,7 @@ class UserSkillController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'rating' => 'nullable|integer|min:0|max:100',
         ]);
 
         $name = $this->normalizeName($validated['name']);
@@ -35,6 +36,7 @@ class UserSkillController extends Controller
         $skill = UserSkill::create([
             'user_id' => $userId,
             'name' => $name,
+            'rating' => isset($validated['rating']) ? (int) $validated['rating'] : null,
         ]);
 
         return response()->json([
@@ -51,6 +53,7 @@ class UserSkillController extends Controller
         $validated = $request->validate([
             'skills' => 'required|array',
             'skills.*.name' => 'required|string|max:255',
+            'skills.*.rating' => 'nullable|integer|min:0|max:100',
             'replace' => 'boolean',
         ]);
 
@@ -65,12 +68,28 @@ class UserSkillController extends Controller
                 continue;
             }
 
+            $rating = null;
+            if (array_key_exists('rating', $skillData) && $skillData['rating'] !== null) {
+                $rating = (int) $skillData['rating'];
+                if ($rating < 0) {
+                    $rating = 0;
+                }
+                if ($rating > 100) {
+                    $rating = 100;
+                }
+            }
+
             $existing = UserSkill::query()
                 ->where('user_id', $userId)
                 ->whereRaw('lower(name) = ?', [mb_strtolower($name)])
                 ->first();
 
             if ($existing) {
+                // Keep the best rating we have (if provided)
+                if ($rating !== null) {
+                    $existing->rating = max((int) ($existing->rating ?? 0), $rating);
+                    $existing->save();
+                }
                 $created[] = $existing;
                 continue;
             }
@@ -78,6 +97,7 @@ class UserSkillController extends Controller
             $created[] = UserSkill::create([
                 'user_id' => $userId,
                 'name' => $name,
+                'rating' => $rating,
             ]);
         }
 
@@ -99,10 +119,12 @@ class UserSkillController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
+            'rating' => 'nullable|integer|min:0|max:100',
         ]);
 
         $skill->update([
             'name' => $this->normalizeName($validated['name']),
+            'rating' => array_key_exists('rating', $validated) ? (is_null($validated['rating']) ? null : (int) $validated['rating']) : $skill->rating,
         ]);
 
         return response()->json([

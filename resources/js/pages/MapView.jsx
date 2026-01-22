@@ -10,7 +10,6 @@ import EventCard from '../components/cards/EventCard';
 import SkillProfileCard from '../components/cards/SkillProfileCard';
 import SkillGapPopup from '../components/ui/SkillGapPopup';
 import { useSkills } from '../context/SkillContext';
-import { generateMockJobs } from '../services/MockJobGenerator';
 
 // Default location: Cebu City (for USJR)
 const DEFAULT_LOCATION = { lat: 10.3157, lng: 123.8854, city: 'Cebu' };
@@ -26,8 +25,9 @@ export default function MapView() {
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
     const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
-    const [searchQuery, setSearchQuery] = useState('Graphics designer'); // Default search
-    const [pendingSearchQuery, setPendingSearchQuery] = useState('Graphics designer'); // For input field
+    const [searchQuery, setSearchQuery] = useState(''); // Search query
+    const [pendingSearchQuery, setPendingSearchQuery] = useState(''); // For input field
+    const [savedJobsSearchQuery, setSavedJobsSearchQuery] = useState(''); // Saved jobs search when switching to seminars
     const [jobs, setJobs] = useState([]);
     const [seminars, setSeminars] = useState([]);
     const [events, setEvents] = useState([]);
@@ -36,8 +36,10 @@ export default function MapView() {
     const [loading, setLoading] = useState(true);
     const [mapCenter, setMapCenter] = useState([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng]);
     const [userCity, setUserCity] = useState(DEFAULT_LOCATION.city);
+    const [radiusKm, setRadiusKm] = useState(3); // Keep UI + backend distance filtering in sync
     const [locationLoading, setLocationLoading] = useState(true);
-    const [weakSkills, setWeakSkills] = useState([]);
+    const [cacheStatus, setCacheStatus] = useState(''); // 'cached' or 'fresh'
+    const [weakSkills, setWeakSkills] = useState([]); // Skills that need improvement
     
     // Agentic workflow states
     const [showAgentBanner, setShowAgentBanner] = useState(fromAgentic);
@@ -103,6 +105,80 @@ export default function MapView() {
         }
     }, [fromAgentic, agenticData, setUserSkills]);
 
+    // Read URL search parameters on mount to restore search state
+    useEffect(() => {
+        const urlParams = new URLSearchParams(location.search);
+        const queryParam = urlParams.get('query');
+        const cityParam = urlParams.get('city');
+        const latParam = urlParams.get('lat');
+        const lngParam = urlParams.get('lng');
+        const radiusParam = urlParams.get('radius_km');
+
+        // Also check localStorage for persisted search state
+        const persistedState = localStorage.getItem('mapSearchState');
+        let searchState = null;
+        if (persistedState) {
+            try {
+                searchState = JSON.parse(persistedState);
+            } catch (e) {
+                console.error('Error parsing persisted search state:', e);
+            }
+        }
+
+        // Priority: URL params > localStorage > defaults
+        if (queryParam) {
+            console.log('Restoring search state from URL:', { queryParam, cityParam, latParam, lngParam });
+            setSearchQuery(queryParam);
+            setPendingSearchQuery(queryParam);
+        } else if (searchState?.query) {
+            console.log('Restoring search state from localStorage:', searchState);
+            setSearchQuery(searchState.query);
+            setPendingSearchQuery(searchState.query);
+        }
+
+        if (cityParam) {
+            setUserCity(cityParam);
+        } else if (searchState?.city) {
+            setUserCity(searchState.city);
+        }
+
+        if (latParam && lngParam) {
+            const lat = parseFloat(latParam);
+            const lng = parseFloat(lngParam);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                setMapCenter([lat, lng]);
+            }
+        } else if (searchState?.mapCenter) {
+            setMapCenter(searchState.mapCenter);
+        }
+
+        if (radiusParam) {
+            const parsedRadius = parseFloat(radiusParam);
+            if (!isNaN(parsedRadius) && parsedRadius > 0) {
+                setRadiusKm(parsedRadius);
+            }
+        } else if (searchState?.radiusKm) {
+            const parsedRadius = parseFloat(searchState.radiusKm);
+            if (!isNaN(parsedRadius) && parsedRadius > 0) {
+                setRadiusKm(parsedRadius);
+            }
+        }
+    }, []); // Only run on mount
+
+    // Persist search state to localStorage when it changes
+    useEffect(() => {
+        if (!locationLoading) {
+            const searchState = {
+                query: searchQuery,
+                city: userCity,
+                mapCenter: mapCenter,
+                radiusKm: radiusKm,
+            };
+            localStorage.setItem('mapSearchState', JSON.stringify(searchState));
+            console.log('Saved search state to localStorage:', searchState);
+        }
+    }, [searchQuery, userCity, mapCenter, radiusKm, locationLoading]);
+
     // Get user's current location on mount
     useEffect(() => {
         getUserLocation();
@@ -116,7 +192,100 @@ export default function MapView() {
                 fetchData();
             }
         }
-    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgentic, searchQuery]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery, radiusKm]);
+
+    const normalizeSkillsForApi = (skills) => {
+        // Agent flow often provides an array of skill strings.
+        if (Array.isArray(skills)) {
+            const normalized = skills
+                .map((s) => (typeof s === 'string' ? s : (s?.name ?? s?.label ?? s?.value ?? '')))
+                .map((s) => (typeof s === 'string' ? s.trim() : ''))
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        // Demo skill session stores a category->level map.
+        // Use the stronger categories as candidate skills so the backend can still rank.
+        if (skills && typeof skills === 'object') {
+            const normalized = Object.entries(skills)
+                .filter(([_, v]) => typeof v === 'number' && !Number.isNaN(v) && v >= 50)
+                .map(([k]) => String(k).trim())
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        return undefined;
+    };
+
+    const mapRequiredSkillToCategory = (rawSkill) => {
+        const skill = String(rawSkill || '').toLowerCase();
+        if (!skill) return null;
+
+        // Programming
+        if (
+            skill.includes('javascript') || skill.includes('typescript') || skill.includes('react') ||
+            skill.includes('node') || skill.includes('php') || skill.includes('laravel') ||
+            skill.includes('python') || skill.includes('java') || skill.includes('c#') ||
+            skill.includes('html') || skill.includes('css') || skill.includes('api')
+        ) return 'Programming';
+
+        // Tools / Design tools
+        if (
+            skill.includes('figma') || skill.includes('sketch') || skill.includes('adobe') ||
+            skill.includes('photoshop') || skill.includes('illustrator') || skill.includes('xd') ||
+            skill.includes('canva')
+        ) return 'Tools';
+
+        // Design / UX
+        if (skill.includes('ui') || skill.includes('ux') || skill.includes('design') || skill.includes('wireframe')) {
+            return 'Design';
+        }
+
+        // Prototyping
+        if (skill.includes('prototype') || skill.includes('prototyp')) return 'Prototyping';
+
+        // Research
+        if (
+            skill.includes('research') || skill.includes('user testing') || skill.includes('usability') ||
+            skill.includes('interview')
+        ) return 'Research';
+
+        // Data analysis
+        if (
+            skill.includes('sql') || skill.includes('excel') || skill.includes('tableau') ||
+            skill.includes('power bi') || skill.includes('analytics') || skill.includes('data') ||
+            skill.includes('statistics')
+        ) return 'Data Analysis';
+
+        // Communication
+        if (
+            skill.includes('communication') || skill.includes('collaboration') || skill.includes('teamwork') ||
+            skill.includes('stakeholder') || skill.includes('presentation') || skill.includes('writing')
+        ) return 'Communication';
+
+        // Leadership
+        if (
+            skill.includes('lead') || skill.includes('management') || skill.includes('mentor') ||
+            skill.includes('strategy')
+        ) return 'Leadership';
+
+        return null;
+    };
+
+    const buildCategoryRequirementsFromRequiredSkills = (requiredSkills) => {
+        if (!requiredSkills || typeof requiredSkills !== 'object') return null;
+
+        const requiredByCategory = {};
+        Object.keys(requiredSkills).forEach((skillName) => {
+            const category = mapRequiredSkillToCategory(skillName);
+            if (category) {
+                // Use a constant requirement; we just need a stable signal for demo scoring.
+                requiredByCategory[category] = 70;
+            }
+        });
+
+        return Object.keys(requiredByCategory).length > 0 ? requiredByCategory : null;
+    };
 
     const getUserLocation = () => {
         setLocationLoading(true);
@@ -159,6 +328,68 @@ export default function MapView() {
         );
     };
 
+    // Cache management functions
+    // This caching system prevents excessive API calls by storing results in sessionStorage
+    // Cache keys are based on: tab-filter-query-city-lat-lng
+    // Cache expires after 24 hours
+    // New searches clear the cache to ensure fresh data
+    const getCacheKey = (tab, filter, query, city, lat, lng) => {
+        return `${tab}-${filter}-${query}-${city}-${lat.toFixed(2)}-${lng.toFixed(2)}`;
+    };
+
+    const getCachedData = (cacheKey) => {
+        try {
+            const cached = sessionStorage.getItem(`jobSearch_${cacheKey}`);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                // Check if cache is still valid (24 hours)
+                const cacheTime = parsed.timestamp;
+                const now = Date.now();
+                if (now - cacheTime < 24 * 60 * 60 * 1000) { // 24 hours
+                    return parsed.data;
+                } else {
+                    // Cache expired, remove it
+                    sessionStorage.removeItem(`jobSearch_${cacheKey}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error reading cache:', error);
+        }
+        return null;
+    };
+
+    const setCachedData = (cacheKey, data) => {
+        try {
+            const cacheEntry = {
+                data: data,
+                timestamp: Date.now()
+            };
+            sessionStorage.setItem(`jobSearch_${cacheKey}`, JSON.stringify(cacheEntry));
+        } catch (error) {
+            console.error('Error setting cache:', error);
+        }
+    };
+
+    const clearSearchCache = () => {
+        // Clear all job search related cache entries
+        const keys = Object.keys(sessionStorage);
+        keys.forEach(key => {
+            if (key.startsWith('jobSearch_')) {
+                sessionStorage.removeItem(key);
+            }
+        });
+        console.log('Search cache cleared');
+    };
+
+    // Expose clearSearchCache to window for debugging (optional)
+    if (typeof window !== 'undefined') {
+        window.clearSearchCache = clearSearchCache;
+        window.clearSearchState = () => {
+            localStorage.removeItem('mapSearchState');
+            console.log('Search state cleared');
+        };
+    }
+
     const fetchData = async () => {
         setLoading(true);
         
@@ -167,21 +398,51 @@ export default function MapView() {
         setEvents([]);
         setCourses([]);
         
-        try {
+        // Create cache key based on current parameters
+        const cacheKey = `${activeTab}-${seminarFilter}-${searchQuery}-${userCity}-${mapCenter[0].toFixed(2)}-${mapCenter[1].toFixed(2)}-${activeTab === 'jobs' ? radiusKm : ''}`;
+        
+        // Check cache first
+        const cachedData = getCachedData(cacheKey);
+        if (cachedData) {
+            console.log('Using cached data for:', cacheKey);
+            setCacheStatus('cached');
             if (activeTab === 'jobs') {
+                setJobs(cachedData.jobs || []);
+            } else if (activeTab === 'seminars') {
+                if (seminarFilter === 'in-person') {
+                    setEvents(cachedData.events || []);
+                } else {
+                    setCourses(cachedData.courses || []);
+                    if (cachedData.weakSkills) {
+                        setWeakSkills(cachedData.weakSkills);
+                    }
+                }
+            }
+            setLoading(false);
+            return;
+        }
+        
+        try {
+            let response;
+            let cacheData = {};
+            
+            if (activeTab === 'jobs') {
+                const skillsToUse = normalizeSkillsForApi(agentData?.skills || userSkills);
                 const response = await axios.get('/api/jobs', {
                     params: { 
                         query: searchQuery, 
                         city: userCity,
                         lat: mapCenter[0], 
-                        lng: mapCenter[1] 
+                        lng: mapCenter[1],
+                        radius_km: radiusKm,
+                        candidate_skills: skillsToUse,
                     }
                 });
                 setJobs(response.data.jobs || []);
+                cacheData = { jobs: response.data.jobs || [] };
             } else if (activeTab === 'seminars') {
                 if (seminarFilter === 'in-person') {
-                    // Fetch real events from our scraper
-                    const response = await axios.get('/api/events', {
+                    response = await axios.get('/api/events', {
                         params: { 
                             query: searchQuery, 
                             city: userCity,
@@ -191,9 +452,9 @@ export default function MapView() {
                         }
                     });
                     setEvents(response.data.events || []);
+                    cacheData = { events: response.data.events || [] };
                 } else {
-                    // Fetch recommended courses based on skills
-                    const response = await axios.get('/api/courses', {
+                    response = await axios.get('/api/courses', {
                         params: { 
                             query: searchQuery,
                             skills: userSkills,
@@ -201,25 +462,30 @@ export default function MapView() {
                         }
                     });
                     setCourses(response.data.courses || []);
+                    cacheData = { 
+                        courses: response.data.courses || [],
+                        weakSkills: response.data.weakSkills 
+                    };
                     
                     // Track which skills are weak for display
                     if (response.data.weakSkills) {
                         setWeakSkills(response.data.weakSkills);
+                        cacheData.weakSkills = response.data.weakSkills;
                     }
                 }
             }
+            
+            // Cache the successful response
+            setCachedData(cacheKey, cacheData);
+            setCacheStatus('fresh');
+            console.log('Fetched fresh data for:', cacheKey);
+            
         } catch (error) {
             console.error('Error fetching data:', error);
-            // Use mock data for demo if API fails
-            if (activeTab === 'jobs') {
-                setJobs(getMockJobs());
-            } else if (activeTab === 'seminars') {
-                if (seminarFilter === 'in-person') {
-                    setEvents(getMockEvents());
-                } else {
-                    setCourses(getMockCourses());
-                }
-            }
+            setJobs([]);
+            setEvents([]);
+            setCourses([]);
+            setWeakSkills([]);
         }
         setLoading(false);
     };
@@ -229,19 +495,16 @@ export default function MapView() {
     };
 
     const handleSearchSubmit = () => {
+        // Clear cache when performing a new search to ensure fresh data
+        clearSearchCache();
         setSearchQuery(pendingSearchQuery);
     };
 
     const handleItemClick = (item) => {
         setSelectedItem(item);
         if (activeTab === 'jobs') {
-            // For mock jobs from agent flow, navigate to apply page
-            if (item.isMockData) {
-                handleApplyClick(item);
-                return;
-            }
             // Pass search context to job details
-            navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}`);
+            navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}&radius_km=${encodeURIComponent(radiusKm)}`);
         } else if (activeTab === 'seminars') {
             if (seminarFilter === 'in-person') {
                 navigate(`/seminar/${item.id}`);
@@ -254,16 +517,6 @@ export default function MapView() {
         }
     };
     
-    const handleApplyClick = (job) => {
-        // Navigate to apply page with job data
-        navigate('/apply', { 
-            state: { 
-                job,
-                agentSkills: agentData?.skills || userSkills
-            } 
-        });
-    };
-
     const handleMarkerClick = (item) => {
         setSelectedItem(item);
     };
@@ -290,10 +543,32 @@ export default function MapView() {
     const items = getItems();
     
     // Add match percentage to items (for jobs)
+    const getJobMatchPercentage = (item) => {
+        const backendScore = item?.match?.score;
+        if (typeof backendScore === 'number' && !Number.isNaN(backendScore)) {
+            return Math.round(backendScore);
+        }
+
+        if (typeof item?.matchPercentage === 'number' && !Number.isNaN(item.matchPercentage)) {
+            return Math.round(item.matchPercentage);
+        }
+
+        // Fallback only if backend match isn't present.
+        // If the user's skill profile is category-based (object), map required skills into categories first.
+        if (userSkills && typeof userSkills === 'object' && !Array.isArray(userSkills)) {
+            const requiredByCategory = buildCategoryRequirementsFromRequiredSkills(item?.requiredSkills);
+            if (requiredByCategory) {
+                return calculateMatchPercentage(requiredByCategory);
+            }
+        }
+
+        return calculateMatchPercentage(item?.requiredSkills || {});
+    };
+
     const itemsWithMatch = items.map(item => ({
         ...item,
         matchPercentage: activeTab === 'jobs' 
-            ? calculateMatchPercentage(item.requiredSkills || {})
+            ? getJobMatchPercentage(item)
             : item.matchPercentage || 0
     }));
 
@@ -320,6 +595,21 @@ export default function MapView() {
                 : 'Search courses (e.g., Python, Design)...';
         }
         return 'Search...';
+    };
+
+    // Custom tab change handler that manages search query state
+    const handleTabChange = (newTab) => {
+        if (newTab === 'seminars' && activeTab === 'jobs') {
+            // Switching to seminars: save current jobs search and clear it
+            setSavedJobsSearchQuery(searchQuery);
+            setSearchQuery('');
+            setPendingSearchQuery('');
+        } else if (newTab === 'jobs' && activeTab === 'seminars') {
+            // Switching back to jobs: restore saved jobs search
+            setSearchQuery(savedJobsSearchQuery);
+            setPendingSearchQuery(savedJobsSearchQuery);
+        }
+        setActiveTab(newTab);
     };
 
     if (skillsLoading || locationLoading) {
@@ -405,7 +695,7 @@ export default function MapView() {
                         </p>
                         <ToggleTabs 
                             activeTab={activeTab}
-                            onTabChange={setActiveTab}
+                            onTabChange={handleTabChange}
                         />
                     </div>
                     <div className="flex gap-2">
@@ -415,9 +705,30 @@ export default function MapView() {
                             onSearch={handleSearch}
                             placeholder={getSearchPlaceholder()}
                         />
+
+                        {activeTab === 'jobs' && (
+                            <select
+                                value={radiusKm}
+                                onChange={(e) => {
+                                    const next = parseFloat(e.target.value);
+                                    if (!Number.isNaN(next) && next > 0) {
+                                        setRadiusKm(next);
+                                    }
+                                }}
+                                className="px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                title="Search radius"
+                            >
+                                <option value={3}>3 km</option>
+                                <option value={5}>5 km</option>
+                                <option value={10}>10 km</option>
+                                <option value={15}>15 km</option>
+                                <option value={25}>25 km</option>
+                            </select>
+                        )}
+
                         <button
                             onClick={handleSearchSubmit}
-                            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all font-medium"
+                            className="px-4 py-2.5 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] focus:outline-none focus:ring-2 focus:ring-[#114124] focus:ring-offset-2 transition-all font-medium"
                         >
                             Search
                         </button>
@@ -486,6 +797,15 @@ export default function MapView() {
                                  activeTab === 'seminars' && seminarFilter === 'online' ? 'Recommended for your skill gaps' :
                                  activeTab === 'seminars' && seminarFilter === 'in-person' ? 'Nearby seminars and events' : 
                                  'Sorted by skill match'} - {sortedItems.length} results
+                                {cacheStatus && (
+                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                                        cacheStatus === 'cached' 
+                                            ? 'bg-green-100 text-green-700' 
+                                            : 'bg-[#114124] text-white'
+                                    }`}>
+                                        {cacheStatus === 'cached' ? '⚡ Cached' : '🔄 Fresh'}
+                                    </span>
+                                )}
                             </p>
                             {/* Weak Skills Indicator for Online Courses */}
                             {activeTab === 'seminars' && seminarFilter === 'online' && weakSkills.length > 0 && (
@@ -506,6 +826,15 @@ export default function MapView() {
                              seminarFilter === 'in-person' ? 'In-Person Seminars' : 'Online Courses'}
                             <span className="text-sm font-normal text-gray-500 ml-2">
                                 ({sortedItems.length} found)
+                                {cacheStatus && (
+                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                                        cacheStatus === 'cached' 
+                                            ? 'bg-green-100 text-green-700' 
+                                            : 'bg-[#114124] text-white'
+                                    }`}>
+                                        {cacheStatus === 'cached' ? '⚡' : '🔄'}
+                                    </span>
+                                )}
                             </span>
                         </h2>
                         
@@ -536,7 +865,7 @@ export default function MapView() {
                                                             e.stopPropagation();
                                                             handleApplyClick(item);
                                                         }}
-                                                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1"
+                                                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-[#114124] text-white text-xs font-medium rounded-lg hover:bg-[#0f3a1a] transition-colors shadow-sm flex items-center gap-1"
                                                     >
                                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -605,6 +934,34 @@ export default function MapView() {
                                     </div>
                                 )}
                                 
+                                {/* View More Links */}
+                                <div className="mt-6 space-y-3">
+                                    <p className="text-sm text-gray-500 mb-2">Browse more courses on:</p>
+                                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                        <a 
+                                            href={`https://www.udemy.com/courses/search/?q=${encodeURIComponent(searchQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                                        >
+                                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 0L1.608 6v12L12 24l10.392-6V6L12 0zm-1.524 17.462H8.618V9.59l1.858-1.054v8.926zm4.478 0h-1.857V8.536l1.857-1.054v10.98z"/>
+                                            </svg>
+                                            View on Udemy
+                                        </a>
+                                        <a 
+                                            href={`https://www.coursera.org/search?query=${encodeURIComponent(searchQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] transition-colors font-medium"
+                                        >
+                                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M11.374 23.977c-4.027-.251-7.64-2.509-9.94-6.104C-.881 14.058-.368 9.102 1.979 5.335a12.072 12.072 0 015.463-4.883C9.71-.486 12.542-.491 14.87.576c2.012.922 3.607 2.362 4.857 4.17.127.184-.11.48-.32.402-2.94-1.1-5.614-.654-7.955 1.356-1.953 1.677-2.782 3.859-2.47 6.343.316 2.514 1.54 4.454 3.592 5.908 1.25.884 2.63 1.398 4.138 1.586.233.029.319.15.3.343a12.075 12.075 0 01-1.257 3.67c-.125.234-.315.412-.532.529-.67.36-1.397.498-2.14.576-.498.053-.5.052-.709-.019z"/>
+                                            </svg>
+                                            View on Coursera
+                                        </a>
+                                    </div>
+                                </div>
 
                             </div>
                         </div>
@@ -614,6 +971,7 @@ export default function MapView() {
                             <JobMap
                                 items={sortedItems}
                                 center={mapCenter}
+                                radiusKm={radiusKm}
                                 onMarkerClick={handleMarkerClick}
                                 selectedItem={selectedItem}
                                 type={activeTab === 'seminars' ? 'seminars' : activeTab}
@@ -629,314 +987,4 @@ export default function MapView() {
             </div>
         </div>
     );
-}
-
-// Mock data for demo purposes - Taguig/BGC locations
-function getMockJobs() {
-    return [
-        {
-            id: 1,
-            title: 'UX Designer',
-            company: 'Accenture Philippines',
-            location: 'BGC, Taguig',
-            latitude: 14.5512,
-            longitude: 121.0498,
-            salary: '₱45,000 - ₱65,000',
-            type: 'Full-time',
-            description: 'We are looking for a creative UX Designer to join our team at BGC...',
-            requiredSkills: { Design: 80, Prototyping: 70, Tools: 60, Research: 50, Communication: 65 }
-        },
-        {
-            id: 2,
-            title: 'Frontend Developer',
-            company: 'Globe Telecom',
-            location: 'The Globe Tower, BGC',
-            latitude: 14.5547,
-            longitude: 121.0462,
-            salary: '₱50,000 - ₱80,000',
-            type: 'Full-time',
-            description: 'Seeking experienced frontend developer proficient in React...',
-            requiredSkills: { Design: 50, Prototyping: 60, Tools: 85, Research: 40, Communication: 55 }
-        },
-        {
-            id: 3,
-            title: 'Product Manager',
-            company: 'Maya (PayMaya)',
-            location: 'Net One Center, BGC',
-            latitude: 14.5489,
-            longitude: 121.0505,
-            salary: '₱70,000 - ₱120,000',
-            type: 'Full-time',
-            description: 'Lead product development for fintech solutions...',
-            requiredSkills: { Design: 45, Prototyping: 55, Tools: 50, Research: 75, Communication: 85 }
-        },
-        {
-            id: 4,
-            title: 'Graphic Designer',
-            company: 'Canva Philippines',
-            location: 'High Street, BGC',
-            latitude: 14.5503,
-            longitude: 121.0451,
-            salary: '₱35,000 - ₱50,000',
-            type: 'Full-time',
-            description: 'Create visual content for marketing campaigns...',
-            requiredSkills: { Design: 90, Prototyping: 40, Tools: 75, Research: 30, Communication: 50 }
-        },
-        {
-            id: 5,
-            title: 'Junior Software Engineer',
-            company: 'Kalibrr',
-            location: 'Uptown BGC, Taguig',
-            latitude: 14.5565,
-            longitude: 121.0532,
-            salary: '₱30,000 - ₱45,000',
-            type: 'Full-time',
-            description: 'Entry level position for software development...',
-            requiredSkills: { Design: 35, Prototyping: 45, Tools: 60, Research: 35, Communication: 45 }
-        }
-    ];
-}
-
-function getMockSeminars() {
-    return [
-        {
-            id: 1,
-            title: 'Tech Workshop: Modern Web Development',
-            organizer: 'Google Developer Groups PH',
-            location: 'Mind Museum, BGC',
-            latitude: 14.5518,
-            longitude: 121.0465,
-            date: 'February 15, 2026',
-            time: '9:00 AM - 5:00 PM',
-            description: 'Hands-on workshop covering latest web technologies...',
-            skillBoosts: { Tools: 15, Prototyping: 10 },
-            attendees: 45,
-            maxAttendees: 100
-        },
-        {
-            id: 2,
-            title: 'Career Fair BGC 2026',
-            organizer: 'JobStreet Philippines',
-            location: 'SMX Convention Center, SM Aura',
-            latitude: 14.5449,
-            longitude: 121.0546,
-            date: 'January 25, 2026',
-            time: '10:00 AM - 6:00 PM',
-            description: 'Connect with top employers in Metro Manila...',
-            skillBoosts: { Communication: 10, Research: 8 },
-            attendees: 230,
-            maxAttendees: 500
-        },
-        {
-            id: 3,
-            title: 'Design Thinking Workshop',
-            organizer: 'UXPH (UX Philippines)',
-            location: 'WeWork, High Street South',
-            latitude: 14.5503,
-            longitude: 121.0451,
-            date: 'February 8, 2026',
-            time: '1:00 PM - 5:00 PM',
-            description: 'Learn design thinking methodologies...',
-            skillBoosts: { Design: 12, Research: 10, Prototyping: 8 },
-            attendees: 28,
-            maxAttendees: 50
-        },
-        {
-            id: 4,
-            title: 'Communication Masterclass',
-            organizer: 'Toastmasters BGC',
-            location: 'Shangri-La at The Fort, BGC',
-            latitude: 14.5535,
-            longitude: 121.0489,
-            date: 'February 22, 2026',
-            time: '2:00 PM - 6:00 PM',
-            description: 'Enhance your professional communication skills...',
-            skillBoosts: { Communication: 15 },
-            attendees: 55,
-            maxAttendees: 80
-        },
-        {
-            id: 5,
-            title: 'Figma & Prototyping Bootcamp',
-            organizer: 'Canva Philippines',
-            location: 'Globe Tower, BGC',
-            latitude: 14.5547,
-            longitude: 121.0462,
-            date: 'March 10, 2026',
-            time: '9:00 AM - 4:00 PM',
-            description: 'Intensive one-day bootcamp on Figma and prototyping...',
-            skillBoosts: { Prototyping: 18, Tools: 12, Design: 8 },
-            attendees: 15,
-            maxAttendees: 30
-        }
-    ];
-}
-
-// Mock events for Cebu area
-function getMockEvents() {
-    return [
-        {
-            id: 'cebu_1',
-            title: 'Cebu Tech Summit 2026',
-            organizer: 'Cebu IT-BPM Organization',
-            location: 'Waterfront Cebu City Hotel',
-            city: 'Cebu City',
-            latitude: 10.3157,
-            longitude: 123.8854,
-            date: 'February 20, 2026',
-            time: '9:00 AM - 6:00 PM',
-            description: 'The biggest technology conference in the Visayas region.',
-            price: '₱500',
-            isFree: false,
-            type: 'offline',
-            skillBoosts: { Tools: 10, Communication: 8 },
-            attendees: 150,
-            maxAttendees: 300
-        },
-        {
-            id: 'cebu_2',
-            title: 'Google Developer Group Cebu Meetup',
-            organizer: 'GDG Cebu',
-            location: 'The Company Cebu',
-            city: 'Cebu City',
-            latitude: 10.3190,
-            longitude: 123.8910,
-            date: 'January 28, 2026',
-            time: '6:00 PM - 9:00 PM',
-            description: 'Monthly meetup for developers. This month: Flutter Development Workshop.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Prototyping: 12, Tools: 10 },
-            attendees: 45,
-            maxAttendees: 80
-        },
-        {
-            id: 'cebu_3',
-            title: 'USJR Career Fair 2026',
-            organizer: 'USJR Office of Career Services',
-            location: 'University of San Jose-Recoletos',
-            city: 'Cebu City',
-            latitude: 10.2988,
-            longitude: 123.8914,
-            date: 'February 5, 2026',
-            time: '8:00 AM - 5:00 PM',
-            description: 'Annual career fair featuring top companies in Cebu.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Communication: 15, Research: 8 },
-            attendees: 320,
-            maxAttendees: 500
-        },
-        {
-            id: 'cebu_4',
-            title: 'UX/UI Design Workshop for Beginners',
-            organizer: 'UXPH Cebu',
-            location: 'aSpace Cebu',
-            city: 'Cebu City',
-            latitude: 10.3210,
-            longitude: 123.8990,
-            date: 'February 12, 2026',
-            time: '1:00 PM - 5:00 PM',
-            description: 'Hands-on workshop covering design fundamentals.',
-            price: '₱300',
-            isFree: false,
-            type: 'offline',
-            skillBoosts: { Design: 15, Prototyping: 12, Tools: 8 },
-            attendees: 25,
-            maxAttendees: 40
-        },
-        {
-            id: 'cebu_5',
-            title: 'Startup Cebu: Pitch Night',
-            organizer: 'Startup Cebu',
-            location: 'The Tide Coworking Space',
-            city: 'Cebu City',
-            latitude: 10.3120,
-            longitude: 123.8850,
-            date: 'January 30, 2026',
-            time: '6:00 PM - 9:00 PM',
-            description: 'Watch local startups pitch their ideas to investors.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Communication: 10, Research: 8 },
-            attendees: 60,
-            maxAttendees: 100
-        }
-    ];
-}
-
-// Mock courses
-function getMockCourses() {
-    return [
-        {
-            id: 'udemy_1',
-            title: 'Complete Web & Mobile Designer: UI/UX, Figma + more',
-            description: 'Become a UI/UX Designer. Learn modern web design.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=ui+ux+design',
-            price: '₱549',
-            isFree: false,
-            rating: 4.7,
-            reviews: 45000,
-            skill: 'Design'
-        },
-        {
-            id: 'coursera_1',
-            title: 'Google UX Design Professional Certificate',
-            description: 'Start your career in UX design with Google.',
-            provider: 'Coursera',
-            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
-            url: 'https://www.coursera.org/professional-certificates/google-ux-design',
-            price: 'Free to audit',
-            isFree: true,
-            rating: 4.8,
-            reviews: 52000,
-            skill: 'Design',
-            partner: 'Google'
-        },
-        {
-            id: 'udemy_2',
-            title: 'Communication Skills for Beginners',
-            description: 'Master professional communication in the workplace.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=communication+skills',
-            price: 'Free',
-            isFree: true,
-            rating: 4.4,
-            reviews: 15000,
-            skill: 'Communication'
-        },
-        {
-            id: 'coursera_2',
-            title: 'Improving Communication Skills',
-            description: 'Learn to communicate more effectively.',
-            provider: 'Coursera',
-            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
-            url: 'https://www.coursera.org/learn/wharton-communication-skills',
-            price: 'Free to audit',
-            isFree: true,
-            rating: 4.7,
-            reviews: 28000,
-            skill: 'Communication',
-            partner: 'University of Pennsylvania'
-        },
-        {
-            id: 'udemy_3',
-            title: 'Figma UI UX Design Essentials',
-            description: 'Learn Figma for UI/UX Design from scratch.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=figma',
-            price: '₱549',
-            isFree: false,
-            rating: 4.8,
-            reviews: 28000,
-            skill: 'Prototyping'
-        }
-    ];
 }
