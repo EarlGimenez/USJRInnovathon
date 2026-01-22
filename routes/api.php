@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\AgentMatchController;
+use App\Http\Controllers\Api\AgentJobRankController;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,3 +41,5 @@ Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
 
 // Agent triggers
 Route::post('/agent/match-score', [AgentMatchController::class, 'score']);
+Route::post('/agent/rank-jobs', [AgentJobRankController::class, 'rankJobs']);
+

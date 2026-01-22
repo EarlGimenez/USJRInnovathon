@@ -22,6 +22,7 @@ class JobMatchServiceTest extends TestCase
 
         $this->assertTrue($result['rejected']);
         $this->assertSame('no_overlap', $result['rejection_reason']);
+        $this->assertSame([], $result['matched_pairs']);
         $this->assertSame(0, $result['score_raw']);
         $this->assertSame(0.0, $result['score']);
     }
@@ -53,6 +54,8 @@ class JobMatchServiceTest extends TestCase
         $this->assertSame('Most skills covered', $result['coverage_label']);
         $this->assertSame(3, $result['breadth']); // laravel, mysql, git
         $this->assertSame(3, $result['evidence_sum']); // 1 + 2
+        $this->assertArrayHasKey('laravel', $result['matched_pairs']);
+        $this->assertArrayHasKey('mysql', $result['matched_pairs']);
     }
 
     #[Test]
