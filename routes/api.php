@@ -6,13 +6,16 @@ use App\Http\Controllers\Api\SeminarController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\PromptController;
+use App\Http\Controllers\Api\AgenticPromptController;
+use App\Http\Controllers\Api\UserProfileController;
 use App\Http\Controllers\Api\AgentMatchController;
 use App\Http\Controllers\Api\AgentJobRankController;
 use App\Http\Controllers\Api\ResumeController;
-use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SkillController;
 use App\Http\Controllers\Api\UserSkillController;
 use App\Http\Controllers\Api\CredentialController;
+use App\Http\Controllers\Api\ProfileController;
 
 /*
 |--------------------------------------------------------------------------
@@ -20,9 +23,20 @@ use App\Http\Controllers\Api\CredentialController;
 |--------------------------------------------------------------------------
 */
 
+// User Profile (no auth - uses latest profile)
+Route::get('/profile', [UserProfileController::class, 'getLatest']);
+Route::post('/profile', [UserProfileController::class, 'save']);
+
 // Session management (anonymous skill profiles)
 Route::post('/session', [SessionController::class, 'create']);
 Route::get('/session/{sessionId}', [SessionController::class, 'show']);
+
+// Prompt router (AI-powered intent detection and matching)
+Route::post('/prompt', [PromptController::class, 'handle']);
+
+// Agentic prompt router (LangChain + LangGraph workflow)
+Route::post('/prompt-ai', [AgenticPromptController::class, 'handle']);
+Route::get('/prompt-ai/health', [AgenticPromptController::class, 'health']);
 
 // Jobs
 Route::get('/jobs', [JobController::class, 'index']);
