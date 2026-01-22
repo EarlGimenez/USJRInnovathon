@@ -21,12 +21,21 @@ from datetime import datetime
 from typing import Optional
 from dataclasses import dataclass, asdict
 from urllib.parse import quote
+from pathlib import Path
 
-# Load environment variables from .env file
+# Load environment variables from .env file (check both current dir and parent/project root)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # Try loading from parent directory (Laravel project root)
+    project_root_env = Path(__file__).resolve().parent.parent / '.env'
+    if project_root_env.exists():
+        load_dotenv(project_root_env)
+        print(f"Loaded .env from: {project_root_env}")
+    else:
+        # Fallback to current directory
+        load_dotenv()
 except ImportError:
+    print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
     pass  # python-dotenv not installed, will use system env vars
 
 

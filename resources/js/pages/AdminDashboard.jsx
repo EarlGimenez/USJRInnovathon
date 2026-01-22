@@ -678,7 +678,7 @@ const AdminDashboard = () => {
                             <div className="flex items-center gap-2 mb-6">
                                 <BarChart3 className="w-5 h-5" style={{ color: '#114124' }} />
                                 <h2 className="text-lg font-semibold text-gray-800">
-                                    Petitions vs Vouchers by Course (Top 6)
+                                    Petitions and Vouchers by Course (Top 6)
                                 </h2>
                             </div>
                             <div className="h-80">

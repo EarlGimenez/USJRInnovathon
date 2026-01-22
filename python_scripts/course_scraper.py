@@ -31,11 +31,18 @@ from urllib.parse import quote_plus, urljoin
 import requests
 from bs4 import BeautifulSoup
 
-# Load environment variables
+# Load environment variables from .env file (check project root)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # Try loading from parent directory (Laravel project root)
+    project_root_env = Path(__file__).resolve().parent.parent / '.env'
+    if project_root_env.exists():
+        load_dotenv(project_root_env)
+        print(f"Loaded .env from: {project_root_env}")
+    else:
+        load_dotenv()
 except ImportError:
+    print("Warning: python-dotenv not installed")
     pass
 
 # Cache directory for pre-scraped courses

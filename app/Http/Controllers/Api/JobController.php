@@ -68,12 +68,26 @@ class JobController extends Controller
         try {
             // Path to Python script
             $scriptPath = base_path('python_scripts/job_listing_scraper.py');
+            
+            // Get Python path from env (same as ResumeParserService)
+            $pythonPath = env('PYTHON_PATH', 'C:\\Users\\earlr\\AppData\\Local\\Programs\\Python\\Python313\\python.exe');
+            $pythonPath = trim($pythonPath, '"\'');
 
-            // Execute Python script with arguments
-            $command = "cd " . base_path() . " && uv run python_scripts/job_listing_scraper.py \"$jobTitle\" \"$location\" 2>&1";
+            // Execute Python script with arguments - using proper Python path
+            $command = sprintf(
+                '"%s" "%s" "%s" "%s" 2>&1',
+                $pythonPath,
+                $scriptPath,
+                $jobTitle,
+                $location
+            );
+            
+            \Log::info('Executing job scraper', ['command' => $command]);
             $output = shell_exec($command);
+            \Log::info('Job scraper output', ['output' => substr($output ?? '', 0, 500)]);
 
             if (!$output) {
+                \Log::warning('Job scraper returned no output, falling back to mock data');
                 // Fallback to mock data if script fails
                 return $this->getMockJobs($location, $lat, $lng);
             }
@@ -81,6 +95,7 @@ class JobController extends Controller
             // Parse JSON output
             $jsonStart = strpos($output, '[');
             if ($jsonStart === false) {
+                \Log::warning('Job scraper output has no JSON array, falling back to mock data', ['output' => substr($output, 0, 300)]);
                 // Fallback to mock data if no JSON found
                 return $this->getMockJobs($location, $lat, $lng);
             }
@@ -89,14 +104,18 @@ class JobController extends Controller
             $pythonJobs = json_decode($jsonOutput, true);
 
             if (!$pythonJobs || !is_array($pythonJobs)) {
+                \Log::warning('Job scraper JSON parsing failed', ['json_error' => json_last_error_msg()]);
                 // Fallback to mock data if JSON parsing fails
                 return $this->getMockJobs($location, $lat, $lng);
             }
+            
+            \Log::info('Job scraper found jobs', ['count' => count($pythonJobs)]);
 
             // Transform Python job data to frontend format
             return $this->transformPythonJobsToFrontendFormat($pythonJobs, $lat, $lng);
 
         } catch (\Exception $e) {
+            \Log::error('Job scraper exception', ['error' => $e->getMessage()]);
             // Fallback to mock data on any error
             return $this->getMockJobs($location, $lat, $lng);
         }

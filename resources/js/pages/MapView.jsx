@@ -503,31 +503,46 @@ export default function MapView() {
             {/* Controls Bar */}
             <div className="bg-white border-b border-gray-200 z-20">
                 <div className="px-4 py-3 lg:px-6 lg:py-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <p className="text-sm flex items-center gap-1" style={{ color: '#181818', opacity: 0.7 }}>
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                            </svg>
-                            {userCity}, Philippines
-                        </p>
+                    {/* Search Bar and Toggle in same row */}
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1 flex gap-2">
+                            <SearchBar 
+                                value={pendingSearchQuery}
+                                onChange={setPendingSearchQuery}
+                                onSearch={handleSearch}
+                                placeholder={getSearchPlaceholder()}
+                            />
+                            <button
+                                onClick={handleSearchSubmit}
+                                className="px-4 py-2.5 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] focus:outline-none focus:ring-2 focus:ring-[#114124] focus:ring-offset-2 transition-all font-medium whitespace-nowrap"
+                            >
+                                Search
+                            </button>
+                            {/* Refresh button to reload regular job listings */}
+                            <button
+                                onClick={() => {
+                                    // Clear agent mode and refresh with current search
+                                    setShowAgentBanner(false);
+                                    setLoading(true);
+                                    // Force re-fetch by triggering the effect
+                                    if (activeTab === 'jobs') {
+                                        fetchJobs();
+                                    } else {
+                                        fetchSeminars();
+                                    }
+                                }}
+                                className="p-2.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2 transition-all"
+                                title="Refresh listings"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
+                        </div>
                         <ToggleTabs 
                             activeTab={activeTab}
                             onTabChange={handleTabChange}
                         />
-                    </div>
-                    <div className="flex gap-2">
-                        <SearchBar 
-                            value={pendingSearchQuery}
-                            onChange={setPendingSearchQuery}
-                            onSearch={handleSearch}
-                            placeholder={getSearchPlaceholder()}
-                        />
-                        <button
-                            onClick={handleSearchSubmit}
-                            className="px-4 py-2.5 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] focus:outline-none focus:ring-2 focus:ring-[#114124] focus:ring-offset-2 transition-all font-medium"
-                        >
-                            Search
-                        </button>
                     </div>
                     
                     {/* Seminar Filter Toggle - Only show when on seminars tab */}
@@ -647,29 +662,12 @@ export default function MapView() {
                                 {sortedItems.map(item => (
                                     <div key={item.id} className="relative">
                                         {activeTab === 'jobs' && (
-                                            <>
-                                                <ListingCard
-                                                    item={item}
-                                                    type="jobs"
-                                                    onClick={() => handleItemClick(item)}
-                                                    isSelected={selectedItem?.id === item.id}
-                                                />
-                                                {/* Apply button for mock jobs from agent */}
-                                                {item.isMockData && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleApplyClick(item);
-                                                        }}
-                                                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-[#114124] text-white text-xs font-medium rounded-lg hover:bg-[#0f3a1a] transition-colors shadow-sm flex items-center gap-1"
-                                                    >
-                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                                        </svg>
-                                                        Apply with AI
-                                                    </button>
-                                                )}
-                                            </>
+                                            <ListingCard
+                                                item={item}
+                                                type="jobs"
+                                                onClick={() => handleItemClick(item)}
+                                                isSelected={selectedItem?.id === item.id}
+                                            />
                                         )}
                                         {activeTab === 'seminars' && seminarFilter === 'in-person' && (
                                             <EventCard

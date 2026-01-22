@@ -40,11 +40,18 @@ def debug_log(message: str, data: any = None):
                 log_msg += f" | {str(data)[:500]}"
         print(log_msg, file=sys.stderr)
 
-# Load environment variables
+# Load environment variables from .env file (check project root)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
-    debug_log("Loaded .env file")
+    from pathlib import Path
+    # Try loading from parent directory (Laravel project root)
+    project_root_env = Path(__file__).resolve().parent.parent / '.env'
+    if project_root_env.exists():
+        load_dotenv(project_root_env)
+        debug_log(f"Loaded .env from: {project_root_env}")
+    else:
+        load_dotenv()
+        debug_log("Loaded .env from current directory")
 except ImportError:
     debug_log("python-dotenv not installed, skipping .env load")
 
