@@ -25,8 +25,8 @@ export default function MapView() {
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
     const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
-    const [searchQuery, setSearchQuery] = useState('Graphics designer'); // Default search
-    const [pendingSearchQuery, setPendingSearchQuery] = useState('Graphics designer'); // For input field
+    const [searchQuery, setSearchQuery] = useState(''); // Search query
+    const [pendingSearchQuery, setPendingSearchQuery] = useState(''); // For input field
     const [jobs, setJobs] = useState([]);
     const [seminars, setSeminars] = useState([]);
     const [events, setEvents] = useState([]);
