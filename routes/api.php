@@ -6,6 +6,10 @@ use App\Http\Controllers\Api\SeminarController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\ResumeController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\SkillController;
+use App\Http\Controllers\Api\CredentialController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,3 +40,31 @@ Route::get('/events/skill/{skill}', [EventController::class, 'bySkill']);
 Route::get('/courses', [CourseController::class, 'index']);
 Route::get('/courses/recommended', [CourseController::class, 'recommended']);
 Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
+
+// Resume parsing (OCR with GPT Vision)
+Route::post('/resume/parse', [ResumeController::class, 'parse']);
+
+// Profile management
+Route::prefix('profile')->group(function () {
+    Route::get('/{userId}', [ProfileController::class, 'show']);
+    Route::post('/', [ProfileController::class, 'store']);
+    Route::put('/{userId}', [ProfileController::class, 'update']);
+});
+
+// Skills management
+Route::prefix('skills')->group(function () {
+    Route::get('/user/{userId}', [SkillController::class, 'index']);
+    Route::post('/', [SkillController::class, 'store']);
+    Route::put('/{skillId}', [SkillController::class, 'update']);
+    Route::delete('/{skillId}', [SkillController::class, 'destroy']);
+    Route::post('/bulk', [SkillController::class, 'bulkStore']);
+});
+
+// Credentials management
+Route::prefix('credentials')->group(function () {
+    Route::get('/user/{userId}', [CredentialController::class, 'index']);
+    Route::post('/', [CredentialController::class, 'store']);
+    Route::put('/{credentialId}', [CredentialController::class, 'update']);
+    Route::delete('/{credentialId}', [CredentialController::class, 'destroy']);
+    Route::post('/bulk', [CredentialController::class, 'bulkStore']);
+});

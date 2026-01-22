@@ -5,16 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Credential;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class CredentialController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Display a listing of the resource for a user.
      */
-    public function index()
+    public function index(string $userId)
     {
-        $credentials = Credential::where('user_id', Auth::id())
+        $credentials = Credential::where('user_id', $userId)
             ->orderBy('start_date', 'desc')
             ->get();
 
@@ -27,18 +26,16 @@ class CredentialController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'user_id' => 'required|string',
             'type' => 'required|in:work,certificate,project',
             'title' => 'required|string|max:255',
             'organization' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'start_date' => 'required|string',
+            'start_date' => 'nullable|string',
             'end_date' => 'nullable|string',
         ]);
 
-        $credential = Credential::create([
-            'user_id' => Auth::id(),
-            ...$validated
-        ]);
+        $credential = Credential::create($validated);
 
         return response()->json([
             'message' => 'Credential created successfully',
@@ -47,23 +44,56 @@ class CredentialController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Bulk store credentials for a user (used by resume parser)
      */
-    public function show(string $id)
+    public function bulkStore(Request $request)
     {
-        $credential = Credential::where('user_id', Auth::id())
-            ->findOrFail($id);
+        $validated = $request->validate([
+            'user_id' => 'required|string',
+            'credentials' => 'required|array',
+            'credentials.*.type' => 'required|in:work,certificate,project',
+            'credentials.*.title' => 'required|string|max:255',
+            'credentials.*.organization' => 'required|string|max:255',
+            'credentials.*.description' => 'nullable|string',
+            'credentials.*.startDate' => 'nullable|string',
+            'credentials.*.endDate' => 'nullable|string',
+            'replace' => 'boolean', // If true, delete existing credentials first
+        ]);
 
-        return response()->json($credential);
+        $userId = $validated['user_id'];
+        
+        // Optionally replace existing credentials
+        if ($request->input('replace', false)) {
+            Credential::where('user_id', $userId)->delete();
+        }
+
+        $created = [];
+        foreach ($validated['credentials'] as $credData) {
+            $credential = Credential::create([
+                'user_id' => $userId,
+                'type' => $credData['type'],
+                'title' => $credData['title'],
+                'organization' => $credData['organization'],
+                'description' => $credData['description'] ?? null,
+                'start_date' => $credData['startDate'] ?? null,
+                'end_date' => $credData['endDate'] ?? null,
+            ]);
+            $created[] = $credential;
+        }
+
+        return response()->json([
+            'message' => 'Credentials added successfully',
+            'credentials' => $created,
+            'count' => count($created)
+        ], 201);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+    public function update(Request $request, string $credentialId)
     {
-        $credential = Credential::where('user_id', Auth::id())
-            ->findOrFail($id);
+        $credential = Credential::findOrFail($credentialId);
 
         $validated = $request->validate([
             'type' => 'sometimes|in:work,certificate,project',
@@ -85,11 +115,9 @@ class CredentialController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id)
+    public function destroy(string $credentialId)
     {
-        $credential = Credential::where('user_id', Auth::id())
-            ->findOrFail($id);
-
+        $credential = Credential::findOrFail($credentialId);
         $credential->delete();
 
         return response()->json([
