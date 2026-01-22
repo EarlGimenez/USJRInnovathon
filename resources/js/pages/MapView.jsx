@@ -5,12 +5,14 @@ import JobMap from '../components/map/JobMap';
 import ToggleTabs from '../components/ui/ToggleTabs';
 import SearchBar from '../components/ui/SearchBar';
 import ListingCard from '../components/cards/ListingCard';
+import CourseCard from '../components/cards/CourseCard';
+import EventCard from '../components/cards/EventCard';
 import SkillProfileCard from '../components/cards/SkillProfileCard';
 import { useSkills } from '../context/SkillContext';
 import { generateMockJobs } from '../services/MockJobGenerator';
 
-// Default location: Taguig, Metro Manila
-const DEFAULT_LOCATION = { lat: 14.5176, lng: 121.0509, city: 'Taguig' };
+// Default location: Cebu City (for USJR)
+const DEFAULT_LOCATION = { lat: 10.3157, lng: 123.8854, city: 'Cebu' };
 
 export default function MapView() {
     const navigate = useNavigate();
@@ -22,14 +24,18 @@ export default function MapView() {
     const fromAgent = location.state?.fromAgent;
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
+    const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
     const [searchQuery, setSearchQuery] = useState('');
     const [jobs, setJobs] = useState([]);
     const [seminars, setSeminars] = useState([]);
+    const [events, setEvents] = useState([]);
+    const [courses, setCourses] = useState([]);
     const [selectedItem, setSelectedItem] = useState(null);
     const [loading, setLoading] = useState(true);
     const [mapCenter, setMapCenter] = useState([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng]);
     const [userCity, setUserCity] = useState(DEFAULT_LOCATION.city);
     const [locationLoading, setLocationLoading] = useState(true);
+    const [weakSkills, setWeakSkills] = useState([]);
     
     // Agent welcome banner state
     const [showAgentBanner, setShowAgentBanner] = useState(fromAgent);
@@ -60,7 +66,7 @@ export default function MapView() {
                 fetchData();
             }
         }
-    }, [activeTab, userCity, locationLoading, fromAgent]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent]);
 
     const getUserLocation = () => {
         setLocationLoading(true);
@@ -106,6 +112,12 @@ export default function MapView() {
 
     const fetchData = async () => {
         setLoading(true);
+        
+        // Clear ALL data to prevent stale data when switching tabs
+        setJobs([]);
+        setEvents([]);
+        setCourses([]);
+        
         try {
             if (activeTab === 'jobs') {
                 const response = await axios.get('/api/jobs', {
@@ -117,19 +129,47 @@ export default function MapView() {
                     }
                 });
                 setJobs(response.data.jobs || []);
-            } else {
-                const response = await axios.get('/api/seminars', {
-                    params: { query: searchQuery, city: userCity }
-                });
-                setSeminars(response.data.seminars || []);
+            } else if (activeTab === 'seminars') {
+                if (seminarFilter === 'in-person') {
+                    // Fetch real events from our scraper
+                    const response = await axios.get('/api/events', {
+                        params: { 
+                            query: searchQuery, 
+                            city: userCity,
+                            latitude: mapCenter[0],
+                            longitude: mapCenter[1],
+                            limit: 5
+                        }
+                    });
+                    setEvents(response.data.events || []);
+                } else {
+                    // Fetch recommended courses based on skills
+                    const response = await axios.get('/api/courses', {
+                        params: { 
+                            query: searchQuery,
+                            skills: userSkills,
+                            limit: 5
+                        }
+                    });
+                    setCourses(response.data.courses || []);
+                    
+                    // Track which skills are weak for display
+                    if (response.data.weakSkills) {
+                        setWeakSkills(response.data.weakSkills);
+                    }
+                }
             }
         } catch (error) {
             console.error('Error fetching data:', error);
             // Use mock data for demo if API fails
             if (activeTab === 'jobs') {
                 setJobs(getMockJobs());
-            } else {
-                setSeminars(getMockSeminars());
+            } else if (activeTab === 'seminars') {
+                if (seminarFilter === 'in-person') {
+                    setEvents(getMockEvents());
+                } else {
+                    setCourses(getMockCourses());
+                }
             }
         }
         setLoading(false);
@@ -149,8 +189,15 @@ export default function MapView() {
                 return;
             }
             navigate(`/job/${item.id}`);
-        } else {
-            navigate(`/seminar/${item.id}`);
+        } else if (activeTab === 'seminars') {
+            if (seminarFilter === 'in-person') {
+                navigate(`/seminar/${item.id}`);
+            } else {
+                // Open course URL in new tab
+                if (item.url) {
+                    window.open(item.url, '_blank', 'noopener,noreferrer');
+                }
+            }
         }
     };
     
@@ -168,16 +215,59 @@ export default function MapView() {
         setSelectedItem(item);
     };
 
-    const items = activeTab === 'jobs' ? jobs : seminars;
+    // Get items based on active tab and filter
+    // Filter to ensure we only show items matching the current view
+    const getItems = () => {
+        if (activeTab === 'jobs') {
+            // Only return items that look like jobs (have company field, no provider field)
+            return jobs.filter(item => item.company && !item.provider);
+        }
+        if (activeTab === 'seminars') {
+            if (seminarFilter === 'in-person') {
+                // Only return items that look like events (have organizer or attendees)
+                return events.filter(item => item.organizer || item.attendees !== undefined);
+            } else {
+                // Only return items that look like courses (have provider field)
+                return courses.filter(item => item.provider || item.platform);
+            }
+        }
+        return [];
+    };
+
+    const items = getItems();
     
-    // Add match percentage to items
+    // Add match percentage to items (for jobs)
     const itemsWithMatch = items.map(item => ({
         ...item,
-        matchPercentage: calculateMatchPercentage(item.requiredSkills || {})
+        matchPercentage: activeTab === 'jobs' 
+            ? calculateMatchPercentage(item.requiredSkills || {})
+            : item.matchPercentage || 0
     }));
 
-    // Sort by match percentage (highest first)
-    const sortedItems = [...itemsWithMatch].sort((a, b) => b.matchPercentage - a.matchPercentage);
+    // Sort by match percentage (highest first) for jobs, keep order for others
+    const sortedItems = activeTab === 'jobs'
+        ? [...itemsWithMatch].sort((a, b) => b.matchPercentage - a.matchPercentage)
+        : itemsWithMatch;
+
+    // Get tab title
+    const getTabTitle = () => {
+        if (activeTab === 'jobs') return 'Job Listings';
+        if (activeTab === 'seminars') {
+            return seminarFilter === 'in-person' ? 'In-Person Seminars' : 'Online Courses';
+        }
+        return 'Listings';
+    };
+
+    // Get search placeholder
+    const getSearchPlaceholder = () => {
+        if (activeTab === 'jobs') return 'Search jobs...';
+        if (activeTab === 'seminars') {
+            return seminarFilter === 'in-person' 
+                ? 'Search seminars and events...' 
+                : 'Search courses (e.g., Python, Design)...';
+        }
+        return 'Search...';
+    };
 
     if (skillsLoading || locationLoading) {
         return (
@@ -243,8 +333,41 @@ export default function MapView() {
                         value={searchQuery}
                         onChange={setSearchQuery}
                         onSearch={handleSearch}
-                        placeholder={`Search ${activeTab}...`}
+                        placeholder={getSearchPlaceholder()}
                     />
+                    
+                    {/* Seminar Filter Toggle - Only show when on seminars tab */}
+                    {activeTab === 'seminars' && (
+                        <div className="flex mt-3 bg-gray-100 rounded-lg p-1">
+                            <button
+                                onClick={() => setSeminarFilter('in-person')}
+                                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                                    seminarFilter === 'in-person'
+                                        ? 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                In-Person
+                            </button>
+                            <button
+                                onClick={() => setSeminarFilter('online')}
+                                className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                                    seminarFilter === 'online'
+                                        ? 'bg-white text-gray-900 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                Online
+                            </button>
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -268,17 +391,32 @@ export default function MapView() {
                     <div className="p-4 lg:p-5">
                         {/* Desktop Header */}
                         <div className="hidden lg:block mb-4 pb-4 border-b border-gray-100">
-                            <h2 className="text-xl font-bold" style={{ color: '#181818' }}>
-                                {activeTab === 'jobs' ? 'Job Listings' : 'Upcoming Seminars'}
+                            <h2 className="text-xl font-bold text-gray-900">
+                                {getTabTitle()}
                             </h2>
                             <p className="text-sm text-gray-500 mt-1">
-                                {fromAgent && activeTab === 'jobs' ? 'AI-matched results' : 'Sorted by skill match'} • {sortedItems.length} results
+                                {fromAgent && activeTab === 'jobs' ? 'AI-matched results' : 
+                                 activeTab === 'seminars' && seminarFilter === 'online' ? 'Recommended for your skill gaps' :
+                                 activeTab === 'seminars' && seminarFilter === 'in-person' ? 'Nearby seminars and events' : 
+                                 'Sorted by skill match'} - {sortedItems.length} results
                             </p>
+                            {/* Weak Skills Indicator for Online Courses */}
+                            {activeTab === 'seminars' && seminarFilter === 'online' && weakSkills.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                    <span className="text-xs text-gray-500">Improving:</span>
+                                    {weakSkills.map(skill => (
+                                        <span key={skill} className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">
+                                            {skill}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         
                         {/* Mobile Header */}
-                        <h2 className="lg:hidden text-lg font-semibold mb-3" style={{ color: '#181818' }}>
-                            {activeTab === 'jobs' ? 'Local Jobs' : 'Local Seminars'}
+                        <h2 className="lg:hidden text-lg font-semibold text-gray-800 mb-3">
+                            {activeTab === 'jobs' ? 'Local Jobs' : 
+                             seminarFilter === 'in-person' ? 'In-Person Seminars' : 'Online Courses'}
                             <span className="text-sm font-normal text-gray-500 ml-2">
                                 ({sortedItems.length} found)
                             </span>
@@ -290,35 +428,48 @@ export default function MapView() {
                             </div>
                         ) : sortedItems.length === 0 ? (
                             <p className="text-gray-500 text-center py-8">
-                                No {activeTab} found in this area.
+                                No {seminarFilter === 'online' ? 'courses' : 'seminars'} found{seminarFilter === 'in-person' ? ' in this area' : ''}.
                             </p>
                         ) : (
                             <div className="space-y-3">
                                 {sortedItems.map(item => (
                                     <div key={item.id} className="relative">
-                                        <ListingCard
-                                            item={item}
-                                            type={activeTab}
-                                            onClick={() => handleItemClick(item)}
-                                            isSelected={selectedItem?.id === item.id}
-                                        />
-                                        {/* Apply button for mock jobs from agent */}
-                                        {item.isMockData && activeTab === 'jobs' && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleApplyClick(item);
-                                                }}
-                                                className="absolute bottom-3 right-3 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors shadow-sm flex items-center gap-1"
-                                                style={{ backgroundColor: '#114124' }}
-                                                onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
-                                                onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                                </svg>
-                                                Apply with AI
-                                            </button>
+                                        {activeTab === 'jobs' && (
+                                            <>
+                                                <ListingCard
+                                                    item={item}
+                                                    type="jobs"
+                                                    onClick={() => handleItemClick(item)}
+                                                    isSelected={selectedItem?.id === item.id}
+                                                />
+                                                {/* Apply button for mock jobs from agent */}
+                                                {item.isMockData && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleApplyClick(item);
+                                                        }}
+                                                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                                        </svg>
+                                                        Apply with AI
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
+                                        {activeTab === 'seminars' && seminarFilter === 'in-person' && (
+                                            <EventCard
+                                                event={item}
+                                                onClick={() => handleItemClick(item)}
+                                            />
+                                        )}
+                                        {activeTab === 'seminars' && seminarFilter === 'online' && (
+                                            <CourseCard
+                                                course={item}
+                                                onClick={() => handleItemClick(item)}
+                                            />
                                         )}
                                     </div>
                                 ))}
@@ -331,18 +482,62 @@ export default function MapView() {
                 {/* Mobile: Top section, takes remaining space */}
                 {/* Desktop: Main area, fills remaining width */}
                 <main className="order-1 lg:order-2 flex-1 relative min-h-[50vh] lg:min-h-0">
-                    <JobMap
-                        items={sortedItems}
-                        center={mapCenter}
-                        onMarkerClick={handleMarkerClick}
-                        selectedItem={selectedItem}
-                        type={activeTab}
-                    />
-                    
-                    {/* User Skills Badge - Positioned on map */}
-                    <div className="absolute top-3 right-3 z-[1000]">
-                        <SkillProfileCard skills={userSkills} compact />
-                    </div>
+                    {activeTab === 'seminars' && seminarFilter === 'online' ? (
+                        // Show course info panel instead of map for online courses
+                        <div className="h-full bg-gradient-to-br from-purple-50 to-indigo-50 flex flex-col items-center justify-center p-8">
+                            <div className="max-w-md text-center">
+                                <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <svg className="w-10 h-10 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-2xl font-bold text-gray-900 mb-3">
+                                    Online Learning
+                                </h3>
+                                <p className="text-gray-600 mb-6">
+                                    These courses are available online. 
+                                    Learn at your own pace from anywhere!
+                                </p>
+                                
+                                {/* Skill gap indicator */}
+                                {weakSkills.length > 0 && (
+                                    <div className="bg-white rounded-xl p-4 shadow-sm border border-purple-100">
+                                        <p className="text-sm font-medium text-gray-700 mb-2">
+                                            Courses selected to improve:
+                                        </p>
+                                        <div className="flex flex-wrap justify-center gap-2">
+                                            {weakSkills.map(skill => (
+                                                <span 
+                                                    key={skill}
+                                                    className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium"
+                                                >
+                                                    {skill}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                
+
+                            </div>
+                        </div>
+                    ) : (
+                        // Show map for jobs and in-person seminars
+                        <>
+                            <JobMap
+                                items={sortedItems}
+                                center={mapCenter}
+                                onMarkerClick={handleMarkerClick}
+                                selectedItem={selectedItem}
+                                type={activeTab === 'seminars' ? 'seminars' : activeTab}
+                            />
+                            
+                            {/* User Skills Badge - Positioned on map */}
+                            <div className="absolute top-3 right-3 z-[1000]">
+                                <SkillProfileCard skills={userSkills} compact />
+                            </div>
+                        </>
+                    )}
                 </main>
             </div>
         </div>
@@ -486,6 +681,175 @@ function getMockSeminars() {
             skillBoosts: { Prototyping: 18, Tools: 12, Design: 8 },
             attendees: 15,
             maxAttendees: 30
+        }
+    ];
+}
+
+// Mock events for Cebu area
+function getMockEvents() {
+    return [
+        {
+            id: 'cebu_1',
+            title: 'Cebu Tech Summit 2026',
+            organizer: 'Cebu IT-BPM Organization',
+            location: 'Waterfront Cebu City Hotel',
+            city: 'Cebu City',
+            latitude: 10.3157,
+            longitude: 123.8854,
+            date: 'February 20, 2026',
+            time: '9:00 AM - 6:00 PM',
+            description: 'The biggest technology conference in the Visayas region.',
+            price: '₱500',
+            isFree: false,
+            type: 'offline',
+            skillBoosts: { Tools: 10, Communication: 8 },
+            attendees: 150,
+            maxAttendees: 300
+        },
+        {
+            id: 'cebu_2',
+            title: 'Google Developer Group Cebu Meetup',
+            organizer: 'GDG Cebu',
+            location: 'The Company Cebu',
+            city: 'Cebu City',
+            latitude: 10.3190,
+            longitude: 123.8910,
+            date: 'January 28, 2026',
+            time: '6:00 PM - 9:00 PM',
+            description: 'Monthly meetup for developers. This month: Flutter Development Workshop.',
+            price: 'Free',
+            isFree: true,
+            type: 'offline',
+            skillBoosts: { Prototyping: 12, Tools: 10 },
+            attendees: 45,
+            maxAttendees: 80
+        },
+        {
+            id: 'cebu_3',
+            title: 'USJR Career Fair 2026',
+            organizer: 'USJR Office of Career Services',
+            location: 'University of San Jose-Recoletos',
+            city: 'Cebu City',
+            latitude: 10.2988,
+            longitude: 123.8914,
+            date: 'February 5, 2026',
+            time: '8:00 AM - 5:00 PM',
+            description: 'Annual career fair featuring top companies in Cebu.',
+            price: 'Free',
+            isFree: true,
+            type: 'offline',
+            skillBoosts: { Communication: 15, Research: 8 },
+            attendees: 320,
+            maxAttendees: 500
+        },
+        {
+            id: 'cebu_4',
+            title: 'UX/UI Design Workshop for Beginners',
+            organizer: 'UXPH Cebu',
+            location: 'aSpace Cebu',
+            city: 'Cebu City',
+            latitude: 10.3210,
+            longitude: 123.8990,
+            date: 'February 12, 2026',
+            time: '1:00 PM - 5:00 PM',
+            description: 'Hands-on workshop covering design fundamentals.',
+            price: '₱300',
+            isFree: false,
+            type: 'offline',
+            skillBoosts: { Design: 15, Prototyping: 12, Tools: 8 },
+            attendees: 25,
+            maxAttendees: 40
+        },
+        {
+            id: 'cebu_5',
+            title: 'Startup Cebu: Pitch Night',
+            organizer: 'Startup Cebu',
+            location: 'The Tide Coworking Space',
+            city: 'Cebu City',
+            latitude: 10.3120,
+            longitude: 123.8850,
+            date: 'January 30, 2026',
+            time: '6:00 PM - 9:00 PM',
+            description: 'Watch local startups pitch their ideas to investors.',
+            price: 'Free',
+            isFree: true,
+            type: 'offline',
+            skillBoosts: { Communication: 10, Research: 8 },
+            attendees: 60,
+            maxAttendees: 100
+        }
+    ];
+}
+
+// Mock courses
+function getMockCourses() {
+    return [
+        {
+            id: 'udemy_1',
+            title: 'Complete Web & Mobile Designer: UI/UX, Figma + more',
+            description: 'Become a UI/UX Designer. Learn modern web design.',
+            provider: 'Udemy',
+            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
+            url: 'https://www.udemy.com/courses/search/?q=ui+ux+design',
+            price: '₱549',
+            isFree: false,
+            rating: 4.7,
+            reviews: 45000,
+            skill: 'Design'
+        },
+        {
+            id: 'coursera_1',
+            title: 'Google UX Design Professional Certificate',
+            description: 'Start your career in UX design with Google.',
+            provider: 'Coursera',
+            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
+            url: 'https://www.coursera.org/professional-certificates/google-ux-design',
+            price: 'Free to audit',
+            isFree: true,
+            rating: 4.8,
+            reviews: 52000,
+            skill: 'Design',
+            partner: 'Google'
+        },
+        {
+            id: 'udemy_2',
+            title: 'Communication Skills for Beginners',
+            description: 'Master professional communication in the workplace.',
+            provider: 'Udemy',
+            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
+            url: 'https://www.udemy.com/courses/search/?q=communication+skills',
+            price: 'Free',
+            isFree: true,
+            rating: 4.4,
+            reviews: 15000,
+            skill: 'Communication'
+        },
+        {
+            id: 'coursera_2',
+            title: 'Improving Communication Skills',
+            description: 'Learn to communicate more effectively.',
+            provider: 'Coursera',
+            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
+            url: 'https://www.coursera.org/learn/wharton-communication-skills',
+            price: 'Free to audit',
+            isFree: true,
+            rating: 4.7,
+            reviews: 28000,
+            skill: 'Communication',
+            partner: 'University of Pennsylvania'
+        },
+        {
+            id: 'udemy_3',
+            title: 'Figma UI UX Design Essentials',
+            description: 'Learn Figma for UI/UX Design from scratch.',
+            provider: 'Udemy',
+            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
+            url: 'https://www.udemy.com/courses/search/?q=figma',
+            price: '₱549',
+            isFree: false,
+            rating: 4.8,
+            reviews: 28000,
+            skill: 'Prototyping'
         }
     ];
 }
