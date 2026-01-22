@@ -3,8 +3,20 @@ import axios from 'axios';
 
 const SkillContext = createContext(null);
 
-// Skill categories matching the wireframe radar chart
+// Expanded skill categories for better course/job matching
 const SKILL_CATEGORIES = [
+    'Design',
+    'Prototyping', 
+    'Tools',
+    'Research',
+    'Communication',
+    'Programming',
+    'Data Analysis',
+    'Leadership'
+];
+
+// Core skills shown in radar chart (keeping original 5 for visual consistency)
+const RADAR_SKILLS = [
     'Design',
     'Prototyping', 
     'Tools',
@@ -20,6 +32,24 @@ const generateRandomSkills = () => {
         skills[skill] = Math.floor(Math.random() * 76) + 20;
     });
     return skills;
+};
+
+// Get weak skills (below threshold)
+const getWeakSkills = (skills, threshold = 50) => {
+    if (!skills) return [];
+    return Object.entries(skills)
+        .filter(([_, level]) => level < threshold)
+        .sort((a, b) => a[1] - b[1])
+        .map(([skill, level]) => ({ skill, level }));
+};
+
+// Get strong skills (above threshold)
+const getStrongSkills = (skills, threshold = 70) => {
+    if (!skills) return [];
+    return Object.entries(skills)
+        .filter(([_, level]) => level >= threshold)
+        .sort((a, b) => b[1] - a[1])
+        .map(([skill, level]) => ({ skill, level }));
 };
 
 export function SkillProvider({ children }) {
@@ -137,7 +167,10 @@ export function SkillProvider({ children }) {
             setUserSkills: updateAllSkills,
             calculateMatchPercentage,
             resetSession,
-            SKILL_CATEGORIES
+            getWeakSkills: () => getWeakSkills(userSkills),
+            getStrongSkills: () => getStrongSkills(userSkills),
+            SKILL_CATEGORIES,
+            RADAR_SKILLS
         }}>
             {children}
         </SkillContext.Provider>
