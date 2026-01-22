@@ -35,17 +35,4 @@ return [
         ],
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | CareerJet API
-    |--------------------------------------------------------------------------
-    |
-    | Get your API key from: https://www.careerjet.ph/partners/api
-    | Sign up as a CareerJet Publisher to receive your API key.
-    |
-    */
-    'careerjet' => [
-        'key' => env('CAREERJET_API_KEY'),
-    ],
-
 ];
