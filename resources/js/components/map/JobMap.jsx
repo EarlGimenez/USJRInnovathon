@@ -91,11 +91,12 @@ const userLocationIcon = L.divIcon({
     iconAnchor: [10, 10]
 });
 
-export default function JobMap({ items, center, onMarkerClick, selectedItem, type }) {
+export default function JobMap({ items, center, radiusKm = 3, onMarkerClick, selectedItem, type }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const markersRef = useRef([]);
     const circleRef = useRef(null);
+    const userMarkerRef = useRef(null);
 
     useEffect(() => {
         // Initialize map
@@ -108,17 +109,17 @@ export default function JobMap({ items, center, onMarkerClick, selectedItem, typ
             }).addTo(mapInstanceRef.current);
 
             // Add user location marker and radius circle
-            L.marker(center, { icon: userLocationIcon })
+            userMarkerRef.current = L.marker(center, { icon: userLocationIcon })
                 .addTo(mapInstanceRef.current)
                 .bindPopup('Your Location');
 
-            // Add search radius circle
+            // Add search radius circle (default; kept in sync by an effect)
             circleRef.current = L.circle(center, {
                 color: '#3b82f6',
                 fillColor: '#3b82f6',
                 fillOpacity: 0.1,
-                radius: 3000, // 3km radius
-                weight: 2
+                radius: 3000,
+                weight: 2,
             }).addTo(mapInstanceRef.current);
         }
 
@@ -129,6 +130,27 @@ export default function JobMap({ items, center, onMarkerClick, selectedItem, typ
             }
         };
     }, []);
+
+    // Keep map center + radius circle in sync with props
+    useEffect(() => {
+        if (!mapInstanceRef.current) return;
+
+        // Move view and overlays to the latest center
+        mapInstanceRef.current.setView(center, mapInstanceRef.current.getZoom() || 13);
+
+        if (userMarkerRef.current) {
+            userMarkerRef.current.setLatLng(center);
+        }
+
+        if (circleRef.current) {
+            circleRef.current.setLatLng(center);
+            // If radiusKm is not provided, keep the previous radius.
+            // (MapView defaults to 3km and passes it explicitly.)
+            if (typeof radiusKm === 'number' && !Number.isNaN(radiusKm) && radiusKm > 0) {
+                circleRef.current.setRadius(radiusKm * 1000);
+            }
+        }
+    }, [center, radiusKm]);
 
     // Update markers when items change
     useEffect(() => {

@@ -38,52 +38,132 @@ const LOADING_STEPS = [
     }
 ];
 
-export default function LoadingSequence({ extractedData, onComplete }) {
+export default function LoadingSequence({ agenticData, onComplete }) {
     const [currentStep, setCurrentStep] = useState(0);
     const [completedSteps, setCompletedSteps] = useState([]);
     const [showResults, setShowResults] = useState(false);
-    const [jobCount, setJobCount] = useState(0);
+    const [itemCount, setItemCount] = useState(0);
+
+    // Determine what type of search this is from agentic data
+    const searchType = agenticData?.intent === 'SKILL_IMPROVEMENT' ? 'seminar' : 'job';
+    const resultLabel = searchType === 'job' ? 'opportunities' : 'training programs';
+
+    // Only allow the sequence to complete/navigate once the search is actually done.
+    // LandingPage sets intent to JOB_SEARCH / SKILL_IMPROVEMENT only after results exist.
+    const searchComplete = agenticData?.intent === 'JOB_SEARCH' || agenticData?.intent === 'SKILL_IMPROVEMENT';
+    const lastStepIndex = LOADING_STEPS.length - 1;
 
     useEffect(() => {
-        if (currentStep < LOADING_STEPS.length) {
+        // Run through steps 0..lastStepIndex-1 normally.
+        if (currentStep < lastStepIndex) {
             const timer = setTimeout(() => {
-                setCompletedSteps(prev => [...prev, LOADING_STEPS[currentStep].id]);
-                setCurrentStep(prev => prev + 1);
+                setCompletedSteps((prev) => [...prev, LOADING_STEPS[currentStep].id]);
+                setCurrentStep((prev) => prev + 1);
             }, LOADING_STEPS[currentStep].duration);
 
             return () => clearTimeout(timer);
-        } else {
-            // All steps completed, show results
-            setTimeout(() => {
-                setShowResults(true);
-                // Animate job count
-                let count = 0;
-                const targetCount = Math.floor(Math.random() * 4) + 3; // 3-6 jobs
-                const interval = setInterval(() => {
-                    count++;
-                    setJobCount(count);
-                    if (count >= targetCount) {
-                        clearInterval(interval);
-                        // Wait a bit then navigate
-                        setTimeout(() => {
-                            onComplete();
-                        }, 2000);
-                    }
-                }, 200);
-            }, 500);
         }
-    }, [currentStep, onComplete]);
 
-    // Extract top skills for display
-    const topSkills = extractedData?.skills 
-        ? Object.entries(extractedData.skills)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([skill]) => skill)
-        : [];
+        // Pause on the last step until the search is complete.
+        if (currentStep === lastStepIndex) {
+            if (!searchComplete) {
+                return;
+            }
+
+            // Mark final step complete, then move to results screen.
+            const timer = setTimeout(() => {
+                setCompletedSteps((prev) => {
+                    const next = [...prev, LOADING_STEPS[currentStep].id];
+                    return Array.from(new Set(next));
+                });
+                setCurrentStep((prev) => prev + 1);
+            }, LOADING_STEPS[currentStep].duration);
+
+            return () => clearTimeout(timer);
+        }
+
+        // currentStep > lastStepIndex => results phase
+        return;
+    }, [currentStep, lastStepIndex, searchComplete]);
+
+    // Switch to the results view only after the last step has finished AND the search is complete.
+    useEffect(() => {
+        if (currentStep <= lastStepIndex) {
+            return;
+        }
+
+        if (!searchComplete) {
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setShowResults(true);
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [currentStep, lastStepIndex, searchComplete]);
+
+    // Animate item count and navigate only once search is complete.
+    useEffect(() => {
+        if (!showResults) {
+            return;
+        }
+
+        if (!searchComplete) {
+            return;
+        }
+
+        let doneTimer = null;
+        let interval = null;
+
+        const jobCount = Array.isArray(agenticData?.jobs) ? agenticData.jobs.length : 0;
+        const trainingCount = Array.isArray(agenticData?.trainings) ? agenticData.trainings.length : 0;
+        const targetCount = searchType === 'job' ? jobCount : trainingCount;
+
+        // If no results, still proceed (but only after search is done).
+        if (targetCount <= 0) {
+            setItemCount(0);
+            doneTimer = setTimeout(() => {
+                onComplete && onComplete();
+            }, 1200);
+
+            return () => {
+                if (doneTimer) {
+                    clearTimeout(doneTimer);
+                }
+            };
+        }
+
+        setItemCount(0);
+        let count = 0;
+
+        interval = setInterval(() => {
+            count++;
+            setItemCount(count);
+            if (count >= targetCount) {
+                clearInterval(interval);
+                doneTimer = setTimeout(() => {
+                    onComplete && onComplete();
+                }, 1200);
+            }
+        }, 120);
+
+        return () => {
+            if (interval) {
+                clearInterval(interval);
+            }
+            if (doneTimer) {
+                clearTimeout(doneTimer);
+            }
+        };
+    }, [showResults, searchComplete, agenticData, searchType, onComplete]);
+
+    // Extract query and user skills for display from agentic data
+    const displayQuery = agenticData?.query || '';
+    const topSkills = agenticData?.user_skills?.slice(0, 3) || [];
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col items-center justify-center px-4">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col items-center justify-center px-4 py-10 relative">
             <div className="w-full max-w-lg">
                 {/* Header */}
                 <div className="text-center mb-8">
@@ -98,10 +178,10 @@ export default function LoadingSequence({ extractedData, onComplete }) {
                 </div>
 
                 {/* User's prompt summary */}
-                {extractedData?.prompt && !showResults && (
+                {agenticData?.prompt && !showResults && (
                     <div className="bg-white rounded-xl p-4 mb-6 shadow-sm border border-gray-100">
                         <p className="text-xs text-gray-400 mb-1">You said:</p>
-                        <p className="text-gray-700 text-sm italic">"{extractedData.prompt.slice(0, 100)}{extractedData.prompt.length > 100 ? '...' : ''}"</p>
+                        <p className="text-gray-700 text-sm italic">"{agenticData.prompt.slice(0, 100)}{agenticData.prompt.length > 100 ? '...' : ''}"</p>
                     </div>
                 )}
 
@@ -166,24 +246,32 @@ export default function LoadingSequence({ extractedData, onComplete }) {
                     </div>
                 )}
 
+                {!showResults && currentStep === lastStepIndex && !searchComplete && (
+                    <div className="text-center text-sm text-gray-500 mb-6">
+                        Still fetching results…
+                    </div>
+                )}
+
                 {/* Results Section */}
                 {showResults && (
                     <div className="text-center animate-fadeIn">
                         {/* Big number */}
                         <div className="mb-6">
                             <div className="inline-flex items-center justify-center w-24 h-24 bg-green-100 rounded-full mb-4">
-                                <span className="text-4xl font-bold text-green-600">{jobCount}</span>
+                                <span className="text-4xl font-bold text-green-600">{itemCount}</span>
                             </div>
                             <h2 className="text-2xl font-bold text-gray-900">
-                                matching opportunities found!
+                                matching {resultLabel} found!
                             </h2>
                         </div>
 
                         {/* Skills identified */}
                         {topSkills.length > 0 && (
                             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 mb-6">
-                                <p className="text-sm text-gray-500 mb-2">Top skills identified:</p>
-                                <div className="flex justify-center gap-2">
+                                <p className="text-sm text-gray-500 mb-2">
+                                    {searchType === 'job' ? 'Top skills identified:' : 'Skills to develop:'}
+                                </p>
+                                <div className="flex justify-center gap-2 flex-wrap">
                                     {topSkills.map(skill => (
                                         <span 
                                             key={skill}
@@ -196,10 +284,27 @@ export default function LoadingSequence({ extractedData, onComplete }) {
                             </div>
                         )}
 
+                        {/* Skill gap warning if applicable */}
+                        {agenticData?.ui?.show_skill_gap_popup && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6">
+                                <div className="flex items-start gap-3">
+                                    <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                    </svg>
+                                    <div className="text-left flex-1">
+                                        <p className="font-medium text-sm text-yellow-900 mb-1">{agenticData.ui.popup_title}</p>
+                                        <p className="text-xs text-yellow-700">
+                                            We've also found {agenticData?.trainings?.length || 0} training programs to help you
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Loading indicator */}
                         <div className="flex items-center justify-center gap-2 text-gray-500">
                             <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                            <span className="text-sm">Preparing your personalized job map...</span>
+                            <span className="text-sm">Preparing your personalized view...</span>
                         </div>
                     </div>
                 )}

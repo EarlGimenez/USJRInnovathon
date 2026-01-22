@@ -8,8 +8,8 @@ import ListingCard from '../components/cards/ListingCard';
 import CourseCard from '../components/cards/CourseCard';
 import EventCard from '../components/cards/EventCard';
 import SkillProfileCard from '../components/cards/SkillProfileCard';
+import SkillGapPopup from '../components/ui/SkillGapPopup';
 import { useSkills } from '../context/SkillContext';
-import { generateMockJobs } from '../services/MockJobGenerator';
 
 // Default location: Cebu City (for USJR)
 const DEFAULT_LOCATION = { lat: 10.3157, lng: 123.8854, city: 'Cebu' };
@@ -19,9 +19,9 @@ export default function MapView() {
     const location = useLocation();
     const { userSkills, calculateMatchPercentage, loading: skillsLoading, setUserSkills } = useSkills();
     
-    // Check if we came from the AI agent flow
-    const agentData = location.state?.agentData;
-    const fromAgent = location.state?.fromAgent;
+    // Check if we came from the agentic workflow
+    const agenticData = location.state?.agenticData;
+    const fromAgentic = location.state?.fromAgentic;
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
     const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
@@ -36,20 +36,74 @@ export default function MapView() {
     const [loading, setLoading] = useState(true);
     const [mapCenter, setMapCenter] = useState([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng]);
     const [userCity, setUserCity] = useState(DEFAULT_LOCATION.city);
+    const [radiusKm, setRadiusKm] = useState(3); // Keep UI + backend distance filtering in sync
     const [locationLoading, setLocationLoading] = useState(true);
     const [cacheStatus, setCacheStatus] = useState(''); // 'cached' or 'fresh'
     const [weakSkills, setWeakSkills] = useState([]); // Skills that need improvement
     
-    // Agent welcome banner state
-    const [showAgentBanner, setShowAgentBanner] = useState(fromAgent);
+    // Agentic workflow states
+    const [showAgentBanner, setShowAgentBanner] = useState(fromAgentic);
+    const [showSkillGapPopup, setShowSkillGapPopup] = useState(false);
 
-    // Apply agent-extracted skills if coming from agent flow
+    // Handle agentic workflow results from LangGraph
     useEffect(() => {
-        if (agentData?.skills && setUserSkills) {
-            // Update user skills with agent-extracted skills
-            setUserSkills(agentData.skills);
+        if (fromAgentic && agenticData) {
+            console.log('📊 Processing agentic data:', agenticData);
+
+            // Allow agentic payload to control initial UI state (keeps backwards compatibility)
+            const requestedTab = agenticData.ui?.default_tab;
+            const requestedSeminarFilter = agenticData.ui?.default_seminar_filter;
+
+            if (requestedTab === 'seminars' || agenticData.intent === 'SKILL_IMPROVEMENT') {
+                setActiveTab('seminars');
+                if (requestedSeminarFilter === 'online' || requestedSeminarFilter === 'in-person') {
+                    setSeminarFilter(requestedSeminarFilter);
+                } else if (agenticData.intent === 'SKILL_IMPROVEMENT') {
+                    setSeminarFilter('online'); // default for skill improvement
+                }
+            } else {
+                setActiveTab('jobs');
+            }
+
+            // Load jobs from LangGraph agentic data
+            if (agenticData.jobs && agenticData.jobs.length > 0) {
+                console.log(`✅ Loading ${agenticData.jobs.length} jobs from LangGraph`);
+                setJobs(agenticData.jobs);
+            }
+
+            // Load trainings from LangGraph agentic data
+            if (agenticData.trainings && agenticData.trainings.length > 0) {
+                console.log(`✅ Loading ${agenticData.trainings.length} trainings from LangGraph`);
+
+                // Separate into events and courses based on mode
+                const eventsList = agenticData.trainings.filter(t => t.mode === 'OFFLINE');
+                const coursesList = agenticData.trainings.filter(t => t.mode === 'ONLINE' || t.mode === 'HYBRID');
+
+                setEvents(eventsList);
+                setCourses(coursesList);
+            }
+
+            setLoading(false);
+
+            // Show skill gap popup if UI config indicates
+            if (agenticData.ui?.show_skill_gap_popup) {
+                console.log('⚠️ Skill gap detected, showing popup');
+                setTimeout(() => {
+                    setShowSkillGapPopup(true);
+                }, 1500); // Show popup after 1.5 seconds
+            }
+
+            // Update user skills if provided by LangGraph
+            if (agenticData.user_skills && agenticData.user_skills.length > 0 && setUserSkills) {
+                const skillsObj = {};
+                agenticData.user_skills.forEach(skill => {
+                    skillsObj[skill] = 70; // Default proficiency
+                });
+                setUserSkills(skillsObj);
+                console.log(`✅ Updated user skills:`, skillsObj);
+            }
         }
-    }, [agentData]);
+    }, [fromAgentic, agenticData, setUserSkills]);
 
     // Read URL search parameters on mount to restore search state
     useEffect(() => {
@@ -58,6 +112,7 @@ export default function MapView() {
         const cityParam = urlParams.get('city');
         const latParam = urlParams.get('lat');
         const lngParam = urlParams.get('lng');
+        const radiusParam = urlParams.get('radius_km');
 
         // Also check localStorage for persisted search state
         const persistedState = localStorage.getItem('mapSearchState');
@@ -96,6 +151,18 @@ export default function MapView() {
         } else if (searchState?.mapCenter) {
             setMapCenter(searchState.mapCenter);
         }
+
+        if (radiusParam) {
+            const parsedRadius = parseFloat(radiusParam);
+            if (!isNaN(parsedRadius) && parsedRadius > 0) {
+                setRadiusKm(parsedRadius);
+            }
+        } else if (searchState?.radiusKm) {
+            const parsedRadius = parseFloat(searchState.radiusKm);
+            if (!isNaN(parsedRadius) && parsedRadius > 0) {
+                setRadiusKm(parsedRadius);
+            }
+        }
     }, []); // Only run on mount
 
     // Persist search state to localStorage when it changes
@@ -104,12 +171,13 @@ export default function MapView() {
             const searchState = {
                 query: searchQuery,
                 city: userCity,
-                mapCenter: mapCenter
+                mapCenter: mapCenter,
+                radiusKm: radiusKm,
             };
             localStorage.setItem('mapSearchState', JSON.stringify(searchState));
             console.log('Saved search state to localStorage:', searchState);
         }
-    }, [searchQuery, userCity, mapCenter, locationLoading]);
+    }, [searchQuery, userCity, mapCenter, radiusKm, locationLoading]);
 
     // Get user's current location on mount
     useEffect(() => {
@@ -119,17 +187,105 @@ export default function MapView() {
     // Fetch data when location or tab changes, or when search query changes
     useEffect(() => {
         if (!locationLoading) {
-            if (fromAgent && activeTab === 'jobs') {
-                // Use generated mock jobs for agent flow
-                const skillsToUse = agentData?.skills || userSkills;
-                const mockJobs = generateMockJobs(skillsToUse, 5);
-                setJobs(mockJobs);
-                setLoading(false);
-            } else {
+            if (!fromAgentic) {
+                // Only fetch if not from agentic workflow
                 fetchData();
             }
         }
-    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgentic, searchQuery, radiusKm]);
+
+    const normalizeSkillsForApi = (skills) => {
+        // Agent flow often provides an array of skill strings.
+        if (Array.isArray(skills)) {
+            const normalized = skills
+                .map((s) => (typeof s === 'string' ? s : (s?.name ?? s?.label ?? s?.value ?? '')))
+                .map((s) => (typeof s === 'string' ? s.trim() : ''))
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        // Demo skill session stores a category->level map.
+        // Use the stronger categories as candidate skills so the backend can still rank.
+        if (skills && typeof skills === 'object') {
+            const normalized = Object.entries(skills)
+                .filter(([_, v]) => typeof v === 'number' && !Number.isNaN(v) && v >= 50)
+                .map(([k]) => String(k).trim())
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        return undefined;
+    };
+
+    const mapRequiredSkillToCategory = (rawSkill) => {
+        const skill = String(rawSkill || '').toLowerCase();
+        if (!skill) return null;
+
+        // Programming
+        if (
+            skill.includes('javascript') || skill.includes('typescript') || skill.includes('react') ||
+            skill.includes('node') || skill.includes('php') || skill.includes('laravel') ||
+            skill.includes('python') || skill.includes('java') || skill.includes('c#') ||
+            skill.includes('html') || skill.includes('css') || skill.includes('api')
+        ) return 'Programming';
+
+        // Tools / Design tools
+        if (
+            skill.includes('figma') || skill.includes('sketch') || skill.includes('adobe') ||
+            skill.includes('photoshop') || skill.includes('illustrator') || skill.includes('xd') ||
+            skill.includes('canva')
+        ) return 'Tools';
+
+        // Design / UX
+        if (skill.includes('ui') || skill.includes('ux') || skill.includes('design') || skill.includes('wireframe')) {
+            return 'Design';
+        }
+
+        // Prototyping
+        if (skill.includes('prototype') || skill.includes('prototyp')) return 'Prototyping';
+
+        // Research
+        if (
+            skill.includes('research') || skill.includes('user testing') || skill.includes('usability') ||
+            skill.includes('interview')
+        ) return 'Research';
+
+        // Data analysis
+        if (
+            skill.includes('sql') || skill.includes('excel') || skill.includes('tableau') ||
+            skill.includes('power bi') || skill.includes('analytics') || skill.includes('data') ||
+            skill.includes('statistics')
+        ) return 'Data Analysis';
+
+        // Communication
+        if (
+            skill.includes('communication') || skill.includes('collaboration') || skill.includes('teamwork') ||
+            skill.includes('stakeholder') || skill.includes('presentation') || skill.includes('writing')
+        ) return 'Communication';
+
+        // Leadership
+        if (
+            skill.includes('lead') || skill.includes('management') || skill.includes('mentor') ||
+            skill.includes('strategy')
+        ) return 'Leadership';
+
+        return null;
+    };
+
+    const buildCategoryRequirementsFromRequiredSkills = (requiredSkills) => {
+        if (!requiredSkills || typeof requiredSkills !== 'object') return null;
+
+        const requiredByCategory = {};
+        Object.keys(requiredSkills).forEach((skillName) => {
+            const category = mapRequiredSkillToCategory(skillName);
+            if (category) {
+                // Use a constant requirement; we just need a stable signal for demo scoring.
+                requiredByCategory[category] = 70;
+            }
+        });
+
+        return Object.keys(requiredByCategory).length > 0 ? requiredByCategory : null;
+    };
 
     const getUserLocation = () => {
         setLocationLoading(true);
@@ -148,8 +304,7 @@ export default function MapView() {
                 // Reverse geocode to get city name using free Nominatim API
                 try {
                     const response = await axios.get(
-                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`,
-                        { headers: { 'User-Agent': 'SkillMatch Demo App' } }
+                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`
                     );
                     
                     const address = response.data.address;
@@ -169,7 +324,7 @@ export default function MapView() {
                 console.log('Geolocation error:', error.message, '- using default location');
                 setLocationLoading(false);
             },
-            { timeout: 10000, enableHighAccuracy: false }
+            { timeout: 3000, maximumAge: 300000, enableHighAccuracy: false }
         );
     };
 
@@ -244,7 +399,7 @@ export default function MapView() {
         setCourses([]);
         
         // Create cache key based on current parameters
-        const cacheKey = `${activeTab}-${seminarFilter}-${searchQuery}-${userCity}-${mapCenter[0].toFixed(2)}-${mapCenter[1].toFixed(2)}`;
+        const cacheKey = `${activeTab}-${seminarFilter}-${searchQuery}-${userCity}-${mapCenter[0].toFixed(2)}-${mapCenter[1].toFixed(2)}-${activeTab === 'jobs' ? radiusKm : ''}`;
         
         // Check cache first
         const cachedData = getCachedData(cacheKey);
@@ -272,12 +427,15 @@ export default function MapView() {
             let cacheData = {};
             
             if (activeTab === 'jobs') {
-                response = await axios.get('/api/jobs', {
+                const skillsToUse = normalizeSkillsForApi(agenticData?.skills || userSkills);
+                const response = await axios.get('/api/jobs', {
                     params: { 
                         query: searchQuery, 
                         city: userCity,
                         lat: mapCenter[0], 
-                        lng: mapCenter[1] 
+                        lng: mapCenter[1],
+                        radius_km: radiusKm,
+                        candidate_skills: skillsToUse,
                     }
                 });
                 setJobs(response.data.jobs || []);
@@ -324,16 +482,10 @@ export default function MapView() {
             
         } catch (error) {
             console.error('Error fetching data:', error);
-            // Use mock data for demo if API fails
-            if (activeTab === 'jobs') {
-                setJobs(getMockJobs());
-            } else if (activeTab === 'seminars') {
-                if (seminarFilter === 'in-person') {
-                    setEvents(getMockEvents());
-                } else {
-                    setCourses(getMockCourses());
-                }
-            }
+            setJobs([]);
+            setEvents([]);
+            setCourses([]);
+            setWeakSkills([]);
         }
         setLoading(false);
     };
@@ -351,20 +503,8 @@ export default function MapView() {
     const handleItemClick = (item) => {
         setSelectedItem(item);
         if (activeTab === 'jobs') {
-            // For mock jobs from agent flow, navigate to apply page
-            if (item.isMockData) {
-                handleApplyClick(item);
-                return;
-            }
             // Pass search context to job details
-            navigate(`/job/${item.id}`, { 
-                state: { 
-                    job: item,
-                    searchQuery,
-                    userCity,
-                    mapCenter
-                } 
-            });
+            navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}&radius_km=${encodeURIComponent(radiusKm)}`);
         } else if (activeTab === 'seminars') {
             if (seminarFilter === 'in-person') {
                 navigate(`/seminar/${item.id}`);
@@ -377,16 +517,6 @@ export default function MapView() {
         }
     };
     
-    const handleApplyClick = (job) => {
-        // Navigate to apply page with job data
-        navigate('/apply', { 
-            state: { 
-                job,
-                agentSkills: agentData?.skills || userSkills
-            } 
-        });
-    };
-
     const handleMarkerClick = (item) => {
         setSelectedItem(item);
     };
@@ -413,10 +543,32 @@ export default function MapView() {
     const items = getItems();
     
     // Add match percentage to items (for jobs)
+    const getJobMatchPercentage = (item) => {
+        const backendScore = item?.match?.score;
+        if (typeof backendScore === 'number' && !Number.isNaN(backendScore)) {
+            return Math.round(backendScore);
+        }
+
+        if (typeof item?.matchPercentage === 'number' && !Number.isNaN(item.matchPercentage)) {
+            return Math.round(item.matchPercentage);
+        }
+
+        // Fallback only if backend match isn't present.
+        // If the user's skill profile is category-based (object), map required skills into categories first.
+        if (userSkills && typeof userSkills === 'object' && !Array.isArray(userSkills)) {
+            const requiredByCategory = buildCategoryRequirementsFromRequiredSkills(item?.requiredSkills);
+            if (requiredByCategory) {
+                return calculateMatchPercentage(requiredByCategory);
+            }
+        }
+
+        return calculateMatchPercentage(item?.requiredSkills || {});
+    };
+
     const itemsWithMatch = items.map(item => ({
         ...item,
         matchPercentage: activeTab === 'jobs' 
-            ? calculateMatchPercentage(item.requiredSkills || {})
+            ? getJobMatchPercentage(item)
             : item.matchPercentage || 0
     }));
 
@@ -473,9 +625,28 @@ export default function MapView() {
 
     return (
         <div className="flex flex-col h-screen bg-gray-50">
-            {/* Agent Success Banner */}
-            {showAgentBanner && (
-                <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-3 relative">
+            {/* Skill Gap Popup - from LangGraph UI config */}
+            {showSkillGapPopup && agenticData?.ui && (
+                <SkillGapPopup
+                    skillGaps={agenticData.skill_gaps || agenticData.jobs?.[0]?.missing_skills || []}
+                    matchPercentage={Math.round(agenticData.average_match_score || agenticData.jobs?.[0]?.match_score || 50)}
+                    suggestedSteps={agenticData.ui.suggested_next_steps || []}
+                    onClose={() => setShowSkillGapPopup(false)}
+                    onViewTraining={() => {
+                        setActiveTab('seminars');
+                        setSeminarFilter('online');
+                        setShowSkillGapPopup(false);
+                    }}
+                />
+            )}
+
+            {/* Agent Success Banner from LangGraph */}
+            {showAgentBanner && agenticData && (
+                <div className={`text-white px-4 py-3 relative ${
+                    agenticData.intent === 'JOB_SEARCH'
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                }`}>
                     <div className="max-w-4xl mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -484,8 +655,20 @@ export default function MapView() {
                                 </svg>
                             </div>
                             <div>
-                                <p className="font-medium text-sm">AI found {jobs.length} matching opportunities!</p>
-                                <p className="text-xs text-white/80">Click a job to apply with AI-generated cover letter</p>
+                                <p className="font-medium text-sm">
+                                    {agenticData.intent === 'JOB_SEARCH'
+                                        ? `AI found ${jobs.length} matching opportunities for "${agenticData.query}"!`
+                                        : `Found ${events.length + courses.length} training programs for "${agenticData.query}"!`
+                                    }
+                                </p>
+                                <p className="text-xs text-white/80">
+                                    {agenticData.ui?.show_skill_gap_popup
+                                        ? 'We detected some skill gaps - check the recommendations'
+                                        : agenticData.intent === 'JOB_SEARCH'
+                                            ? 'Sorted by match score - top matches first'
+                                            : 'Select a program to enhance your skills'
+                                    }
+                                </p>
                             </div>
                         </div>
                         <button 
@@ -522,6 +705,27 @@ export default function MapView() {
                             onSearch={handleSearch}
                             placeholder={getSearchPlaceholder()}
                         />
+
+                        {activeTab === 'jobs' && (
+                            <select
+                                value={radiusKm}
+                                onChange={(e) => {
+                                    const next = parseFloat(e.target.value);
+                                    if (!Number.isNaN(next) && next > 0) {
+                                        setRadiusKm(next);
+                                    }
+                                }}
+                                className="px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                title="Search radius"
+                            >
+                                <option value={3}>3 km</option>
+                                <option value={5}>5 km</option>
+                                <option value={10}>10 km</option>
+                                <option value={15}>15 km</option>
+                                <option value={25}>25 km</option>
+                            </select>
+                        )}
+
                         <button
                             onClick={handleSearchSubmit}
                             className="px-4 py-2.5 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] focus:outline-none focus:ring-2 focus:ring-[#114124] focus:ring-offset-2 transition-all font-medium"
@@ -589,7 +793,7 @@ export default function MapView() {
                                 {getTabTitle()}
                             </h2>
                             <p className="text-sm text-gray-500 mt-1">
-                                {fromAgent && activeTab === 'jobs' ? 'AI-matched results' : 
+                                {fromAgentic && activeTab === 'jobs' ? 'AI-matched results' : 
                                  activeTab === 'seminars' && seminarFilter === 'online' ? 'Recommended for your skill gaps' :
                                  activeTab === 'seminars' && seminarFilter === 'in-person' ? 'Nearby seminars and events' : 
                                  'Sorted by skill match'} - {sortedItems.length} results
@@ -767,6 +971,7 @@ export default function MapView() {
                             <JobMap
                                 items={sortedItems}
                                 center={mapCenter}
+                                radiusKm={radiusKm}
                                 onMarkerClick={handleMarkerClick}
                                 selectedItem={selectedItem}
                                 type={activeTab === 'seminars' ? 'seminars' : activeTab}
@@ -782,314 +987,4 @@ export default function MapView() {
             </div>
         </div>
     );
-}
-
-// Mock data for demo purposes - Taguig/BGC locations
-function getMockJobs() {
-    return [
-        {
-            id: 1,
-            title: 'UX Designer',
-            company: 'Accenture Philippines',
-            location: 'BGC, Taguig',
-            latitude: 14.5512,
-            longitude: 121.0498,
-            salary: '₱45,000 - ₱65,000',
-            type: 'Full-time',
-            description: 'We are looking for a creative UX Designer to join our team at BGC...',
-            requiredSkills: { Design: 80, Prototyping: 70, Tools: 60, Research: 50, Communication: 65 }
-        },
-        {
-            id: 2,
-            title: 'Frontend Developer',
-            company: 'Globe Telecom',
-            location: 'The Globe Tower, BGC',
-            latitude: 14.5547,
-            longitude: 121.0462,
-            salary: '₱50,000 - ₱80,000',
-            type: 'Full-time',
-            description: 'Seeking experienced frontend developer proficient in React...',
-            requiredSkills: { Design: 50, Prototyping: 60, Tools: 85, Research: 40, Communication: 55 }
-        },
-        {
-            id: 3,
-            title: 'Product Manager',
-            company: 'Maya (PayMaya)',
-            location: 'Net One Center, BGC',
-            latitude: 14.5489,
-            longitude: 121.0505,
-            salary: '₱70,000 - ₱120,000',
-            type: 'Full-time',
-            description: 'Lead product development for fintech solutions...',
-            requiredSkills: { Design: 45, Prototyping: 55, Tools: 50, Research: 75, Communication: 85 }
-        },
-        {
-            id: 4,
-            title: 'Graphic Designer',
-            company: 'Canva Philippines',
-            location: 'High Street, BGC',
-            latitude: 14.5503,
-            longitude: 121.0451,
-            salary: '₱35,000 - ₱50,000',
-            type: 'Full-time',
-            description: 'Create visual content for marketing campaigns...',
-            requiredSkills: { Design: 90, Prototyping: 40, Tools: 75, Research: 30, Communication: 50 }
-        },
-        {
-            id: 5,
-            title: 'Junior Software Engineer',
-            company: 'Kalibrr',
-            location: 'Uptown BGC, Taguig',
-            latitude: 14.5565,
-            longitude: 121.0532,
-            salary: '₱30,000 - ₱45,000',
-            type: 'Full-time',
-            description: 'Entry level position for software development...',
-            requiredSkills: { Design: 35, Prototyping: 45, Tools: 60, Research: 35, Communication: 45 }
-        }
-    ];
-}
-
-function getMockSeminars() {
-    return [
-        {
-            id: 1,
-            title: 'Tech Workshop: Modern Web Development',
-            organizer: 'Google Developer Groups PH',
-            location: 'Mind Museum, BGC',
-            latitude: 14.5518,
-            longitude: 121.0465,
-            date: 'February 15, 2026',
-            time: '9:00 AM - 5:00 PM',
-            description: 'Hands-on workshop covering latest web technologies...',
-            skillBoosts: { Tools: 15, Prototyping: 10 },
-            attendees: 45,
-            maxAttendees: 100
-        },
-        {
-            id: 2,
-            title: 'Career Fair BGC 2026',
-            organizer: 'JobStreet Philippines',
-            location: 'SMX Convention Center, SM Aura',
-            latitude: 14.5449,
-            longitude: 121.0546,
-            date: 'January 25, 2026',
-            time: '10:00 AM - 6:00 PM',
-            description: 'Connect with top employers in Metro Manila...',
-            skillBoosts: { Communication: 10, Research: 8 },
-            attendees: 230,
-            maxAttendees: 500
-        },
-        {
-            id: 3,
-            title: 'Design Thinking Workshop',
-            organizer: 'UXPH (UX Philippines)',
-            location: 'WeWork, High Street South',
-            latitude: 14.5503,
-            longitude: 121.0451,
-            date: 'February 8, 2026',
-            time: '1:00 PM - 5:00 PM',
-            description: 'Learn design thinking methodologies...',
-            skillBoosts: { Design: 12, Research: 10, Prototyping: 8 },
-            attendees: 28,
-            maxAttendees: 50
-        },
-        {
-            id: 4,
-            title: 'Communication Masterclass',
-            organizer: 'Toastmasters BGC',
-            location: 'Shangri-La at The Fort, BGC',
-            latitude: 14.5535,
-            longitude: 121.0489,
-            date: 'February 22, 2026',
-            time: '2:00 PM - 6:00 PM',
-            description: 'Enhance your professional communication skills...',
-            skillBoosts: { Communication: 15 },
-            attendees: 55,
-            maxAttendees: 80
-        },
-        {
-            id: 5,
-            title: 'Figma & Prototyping Bootcamp',
-            organizer: 'Canva Philippines',
-            location: 'Globe Tower, BGC',
-            latitude: 14.5547,
-            longitude: 121.0462,
-            date: 'March 10, 2026',
-            time: '9:00 AM - 4:00 PM',
-            description: 'Intensive one-day bootcamp on Figma and prototyping...',
-            skillBoosts: { Prototyping: 18, Tools: 12, Design: 8 },
-            attendees: 15,
-            maxAttendees: 30
-        }
-    ];
-}
-
-// Mock events for Cebu area
-function getMockEvents() {
-    return [
-        {
-            id: 'cebu_1',
-            title: 'Cebu Tech Summit 2026',
-            organizer: 'Cebu IT-BPM Organization',
-            location: 'Waterfront Cebu City Hotel',
-            city: 'Cebu City',
-            latitude: 10.3157,
-            longitude: 123.8854,
-            date: 'February 20, 2026',
-            time: '9:00 AM - 6:00 PM',
-            description: 'The biggest technology conference in the Visayas region.',
-            price: '₱500',
-            isFree: false,
-            type: 'offline',
-            skillBoosts: { Tools: 10, Communication: 8 },
-            attendees: 150,
-            maxAttendees: 300
-        },
-        {
-            id: 'cebu_2',
-            title: 'Google Developer Group Cebu Meetup',
-            organizer: 'GDG Cebu',
-            location: 'The Company Cebu',
-            city: 'Cebu City',
-            latitude: 10.3190,
-            longitude: 123.8910,
-            date: 'January 28, 2026',
-            time: '6:00 PM - 9:00 PM',
-            description: 'Monthly meetup for developers. This month: Flutter Development Workshop.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Prototyping: 12, Tools: 10 },
-            attendees: 45,
-            maxAttendees: 80
-        },
-        {
-            id: 'cebu_3',
-            title: 'USJR Career Fair 2026',
-            organizer: 'USJR Office of Career Services',
-            location: 'University of San Jose-Recoletos',
-            city: 'Cebu City',
-            latitude: 10.2988,
-            longitude: 123.8914,
-            date: 'February 5, 2026',
-            time: '8:00 AM - 5:00 PM',
-            description: 'Annual career fair featuring top companies in Cebu.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Communication: 15, Research: 8 },
-            attendees: 320,
-            maxAttendees: 500
-        },
-        {
-            id: 'cebu_4',
-            title: 'UX/UI Design Workshop for Beginners',
-            organizer: 'UXPH Cebu',
-            location: 'aSpace Cebu',
-            city: 'Cebu City',
-            latitude: 10.3210,
-            longitude: 123.8990,
-            date: 'February 12, 2026',
-            time: '1:00 PM - 5:00 PM',
-            description: 'Hands-on workshop covering design fundamentals.',
-            price: '₱300',
-            isFree: false,
-            type: 'offline',
-            skillBoosts: { Design: 15, Prototyping: 12, Tools: 8 },
-            attendees: 25,
-            maxAttendees: 40
-        },
-        {
-            id: 'cebu_5',
-            title: 'Startup Cebu: Pitch Night',
-            organizer: 'Startup Cebu',
-            location: 'The Tide Coworking Space',
-            city: 'Cebu City',
-            latitude: 10.3120,
-            longitude: 123.8850,
-            date: 'January 30, 2026',
-            time: '6:00 PM - 9:00 PM',
-            description: 'Watch local startups pitch their ideas to investors.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Communication: 10, Research: 8 },
-            attendees: 60,
-            maxAttendees: 100
-        }
-    ];
-}
-
-// Mock courses
-function getMockCourses() {
-    return [
-        {
-            id: 'udemy_1',
-            title: 'Complete Web & Mobile Designer: UI/UX, Figma + more',
-            description: 'Become a UI/UX Designer. Learn modern web design.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=ui+ux+design',
-            price: '₱549',
-            isFree: false,
-            rating: 4.7,
-            reviews: 45000,
-            skill: 'Design'
-        },
-        {
-            id: 'coursera_1',
-            title: 'Google UX Design Professional Certificate',
-            description: 'Start your career in UX design with Google.',
-            provider: 'Coursera',
-            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
-            url: 'https://www.coursera.org/professional-certificates/google-ux-design',
-            price: 'Free to audit',
-            isFree: true,
-            rating: 4.8,
-            reviews: 52000,
-            skill: 'Design',
-            partner: 'Google'
-        },
-        {
-            id: 'udemy_2',
-            title: 'Communication Skills for Beginners',
-            description: 'Master professional communication in the workplace.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=communication+skills',
-            price: 'Free',
-            isFree: true,
-            rating: 4.4,
-            reviews: 15000,
-            skill: 'Communication'
-        },
-        {
-            id: 'coursera_2',
-            title: 'Improving Communication Skills',
-            description: 'Learn to communicate more effectively.',
-            provider: 'Coursera',
-            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
-            url: 'https://www.coursera.org/learn/wharton-communication-skills',
-            price: 'Free to audit',
-            isFree: true,
-            rating: 4.7,
-            reviews: 28000,
-            skill: 'Communication',
-            partner: 'University of Pennsylvania'
-        },
-        {
-            id: 'udemy_3',
-            title: 'Figma UI UX Design Essentials',
-            description: 'Learn Figma for UI/UX Design from scratch.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=figma',
-            price: '₱549',
-            isFree: false,
-            rating: 4.8,
-            reviews: 28000,
-            skill: 'Prototyping'
-        }
-    ];
 }
