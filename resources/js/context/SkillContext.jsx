@@ -1,0 +1,142 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
+
+const SkillContext = createContext(null);
+
+// Skill categories matching the wireframe radar chart
+const SKILL_CATEGORIES = [
+    'Design',
+    'Prototyping', 
+    'Tools',
+    'Research',
+    'Communication'
+];
+
+// Generate random skill percentages
+const generateRandomSkills = () => {
+    const skills = {};
+    SKILL_CATEGORIES.forEach(skill => {
+        // Random value between 20-95 for more realistic demo
+        skills[skill] = Math.floor(Math.random() * 76) + 20;
+    });
+    return skills;
+};
+
+export function SkillProvider({ children }) {
+    const [userSkills, setUserSkills] = useState(null);
+    const [sessionId, setSessionId] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        initializeSession();
+    }, []);
+
+    const initializeSession = async () => {
+        // Check localStorage for existing session
+        const storedSession = localStorage.getItem('skillmatch_session');
+        
+        if (storedSession) {
+            const parsed = JSON.parse(storedSession);
+            setUserSkills(parsed.skills);
+            setSessionId(parsed.sessionId);
+            setLoading(false);
+            return;
+        }
+
+        // Create new session with random skills
+        try {
+            const response = await axios.post('/api/session', {
+                skills: generateRandomSkills()
+            });
+            
+            const { sessionId, skills } = response.data;
+            
+            // Store in localStorage
+            localStorage.setItem('skillmatch_session', JSON.stringify({
+                sessionId,
+                skills
+            }));
+            
+            setUserSkills(skills);
+            setSessionId(sessionId);
+        } catch (error) {
+            // Fallback to client-side only if API fails
+            console.error('Session API error, using local fallback:', error);
+            const skills = generateRandomSkills();
+            const fallbackSessionId = 'local_' + Date.now();
+            
+            localStorage.setItem('skillmatch_session', JSON.stringify({
+                sessionId: fallbackSessionId,
+                skills
+            }));
+            
+            setUserSkills(skills);
+            setSessionId(fallbackSessionId);
+        }
+        
+        setLoading(false);
+    };
+
+    const updateSkill = (skillName, increment) => {
+        setUserSkills(prev => {
+            const newSkills = {
+                ...prev,
+                [skillName]: Math.min(100, (prev[skillName] || 0) + increment)
+            };
+            
+            // Update localStorage
+            const stored = JSON.parse(localStorage.getItem('skillmatch_session') || '{}');
+            stored.skills = newSkills;
+            localStorage.setItem('skillmatch_session', JSON.stringify(stored));
+            
+            return newSkills;
+        });
+    };
+
+    const calculateMatchPercentage = (requiredSkills) => {
+        if (!userSkills || !requiredSkills) return 0;
+        
+        let totalMatch = 0;
+        let skillCount = 0;
+        
+        Object.entries(requiredSkills).forEach(([skill, required]) => {
+            const userLevel = userSkills[skill] || 0;
+            // Calculate how well user meets requirement (capped at 100%)
+            const match = Math.min(100, (userLevel / required) * 100);
+            totalMatch += match;
+            skillCount++;
+        });
+        
+        return skillCount > 0 ? Math.round(totalMatch / skillCount) : 0;
+    };
+
+    const resetSession = () => {
+        localStorage.removeItem('skillmatch_session');
+        setUserSkills(null);
+        setSessionId(null);
+        setLoading(true);
+        initializeSession();
+    };
+
+    return (
+        <SkillContext.Provider value={{
+            userSkills,
+            sessionId,
+            loading,
+            updateSkill,
+            calculateMatchPercentage,
+            resetSession,
+            SKILL_CATEGORIES
+        }}>
+            {children}
+        </SkillContext.Provider>
+    );
+}
+
+export const useSkills = () => {
+    const context = useContext(SkillContext);
+    if (!context) {
+        throw new Error('useSkills must be used within a SkillProvider');
+    }
+    return context;
+};
