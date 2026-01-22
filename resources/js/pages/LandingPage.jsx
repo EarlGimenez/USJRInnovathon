@@ -356,15 +356,15 @@ export default function LandingPage() {
                         default_tab: 'jobs',
                         default_seminar_filter: preferred,
                         show_skill_gap_popup: showSkillGapPopup,
-                        popup_title: showSkillGapPopup ? 'Suggested Skills to Strengthen' : '',
+                        popup_title: showSkillGapPopup ? 'Skill Gap Notice' : '',
                         popup_body: showSkillGapPopup
-                            ? `Your average match score is ${average_match_score}%. Based on the postings we found, a few skills look worth strengthening to improve matches.`
+                            ? `Your average match score is ${average_match_score}%. This suggests a skill gap for this role — check trainings to improve your match.`
                             : '',
                         suggested_next_steps: showSkillGapPopup
                             ? [
-                                'Review the missing skills and prioritize 1–2 to learn first',
                                 'Open the Training tab to see recommended courses/seminars',
-                                'Update your profile skills and re-run the search',
+                                'Complete 1–2 trainings and add them to your profile',
+                                'Rerun the job search to see your match improve',
                               ]
                             : [],
                     },

@@ -24,9 +24,9 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
                                 </svg>
                             </div>
                             <div>
-                                <h3 className="text-xl font-bold">Suggested Skills to Strengthen</h3>
+                                <h3 className="text-xl font-bold">Skill Gap Notice</h3>
                                 <p className="text-sm text-white text-opacity-90">
-                                    Current match: {matchPercentage}%
+                                    Your skill match: {matchPercentage}%
                                 </p>
                             </div>
                         </div>
@@ -64,17 +64,20 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
                     </div>
 
                     <p className="text-gray-700 mb-4">
-                        Based on your prompt and the job postings we found, these look like helpful areas to learn or improve:
+                        Your skill level for this job is currently around {matchPercentage}%, which suggests a skill gap. You can improve your chances by upskilling and then re-checking your match.
                     </p>
 
-                    {/* Missing skills */}
+                    {/* Optional skill hints (if available) */}
                     {normalizedGaps.length > 0 && (
                         <div className="mb-6">
+                            <p className="text-xs text-gray-500 mb-2">
+                                Common skills seen in these job postings:
+                            </p>
                             <div className="flex flex-wrap gap-2">
                                 {normalizedGaps.slice(0, 5).map((skill, index) => (
                                     <span
                                         key={index}
-                                        className="px-3 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-medium"
+                                        className="px-3 py-2 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium"
                                     >
                                         {skill}
                                     </span>
@@ -125,7 +128,7 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
 
                     {/* Info note */}
                     <p className="text-xs text-gray-500 text-center mt-4">
-                        Tip: This is an estimate — improving even 1–2 areas can make matches stronger.
+                        Tip: Improve skills, refresh your profile, and rerun the search.
                     </p>
                 </div>
             </div>
