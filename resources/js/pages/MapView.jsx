@@ -225,9 +225,9 @@ export default function MapView() {
                     <div className="flex items-center justify-between mb-3">
                         <div>
                             <Link to="/" className="hover:opacity-80 transition-opacity">
-                                <img src="/lookal_logo.png" alt="Lookal" className="h-7 lg:h-8" />
+                                <img src="/lookal_logo.png" alt="Lookal" className="h-12 lg:h-16" />
                             </Link>
-                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                            <p className="text-xs flex items-center gap-1" style={{ color: '#181818', opacity: 0.7 }}>
                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                                 </svg>
@@ -268,7 +268,7 @@ export default function MapView() {
                     <div className="p-4 lg:p-5">
                         {/* Desktop Header */}
                         <div className="hidden lg:block mb-4 pb-4 border-b border-gray-100">
-                            <h2 className="text-xl font-bold text-gray-900">
+                            <h2 className="text-xl font-bold" style={{ color: '#181818' }}>
                                 {activeTab === 'jobs' ? 'Job Listings' : 'Upcoming Seminars'}
                             </h2>
                             <p className="text-sm text-gray-500 mt-1">
@@ -277,7 +277,7 @@ export default function MapView() {
                         </div>
                         
                         {/* Mobile Header */}
-                        <h2 className="lg:hidden text-lg font-semibold text-gray-800 mb-3">
+                        <h2 className="lg:hidden text-lg font-semibold mb-3" style={{ color: '#181818' }}>
                             {activeTab === 'jobs' ? 'Local Jobs' : 'Local Seminars'}
                             <span className="text-sm font-normal text-gray-500 ml-2">
                                 ({sortedItems.length} found)
