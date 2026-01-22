@@ -48,10 +48,17 @@ export default function MapView() {
         if (fromAgentic && agenticData) {
             console.log('📊 Processing agentic data:', agenticData);
 
-            // Set the appropriate tab based on intent from LangGraph
-            if (agenticData.intent === 'SKILL_IMPROVEMENT') {
+            // Allow agentic payload to control initial UI state (keeps backwards compatibility)
+            const requestedTab = agenticData.ui?.default_tab;
+            const requestedSeminarFilter = agenticData.ui?.default_seminar_filter;
+
+            if (requestedTab === 'seminars' || agenticData.intent === 'SKILL_IMPROVEMENT') {
                 setActiveTab('seminars');
-                setSeminarFilter('online'); // Show online courses for skill improvement
+                if (requestedSeminarFilter === 'online' || requestedSeminarFilter === 'in-person') {
+                    setSeminarFilter(requestedSeminarFilter);
+                } else if (agenticData.intent === 'SKILL_IMPROVEMENT') {
+                    setSeminarFilter('online'); // default for skill improvement
+                }
             } else {
                 setActiveTab('jobs');
             }
@@ -109,7 +116,7 @@ export default function MapView() {
                 fetchData();
             }
         }
-    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgentic, searchQuery]);
 
     const getUserLocation = () => {
         setLocationLoading(true);
