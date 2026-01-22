@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Skill;
+use App\Models\UserSkill;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -14,7 +14,7 @@ class SkillController extends Controller
      */
     public function index()
     {
-        $skills = Skill::where('user_id', Auth::id())
+        $skills = UserSkill::where('user_id', Auth::id())
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -30,7 +30,7 @@ class SkillController extends Controller
             'name' => 'required|string|max:255',
         ]);
 
-        $skill = Skill::create([
+        $skill = UserSkill::create([
             'user_id' => Auth::id(),
             'name' => $validated['name']
         ]);
@@ -46,7 +46,7 @@ class SkillController extends Controller
      */
     public function show(string $id)
     {
-        $skill = Skill::where('user_id', Auth::id())
+        $skill = UserSkill::where('user_id', Auth::id())
             ->findOrFail($id);
 
         return response()->json($skill);
@@ -57,7 +57,7 @@ class SkillController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        $skill = Skill::where('user_id', Auth::id())
+        $skill = UserSkill::where('user_id', Auth::id())
             ->findOrFail($id);
 
         $validated = $request->validate([
@@ -77,7 +77,7 @@ class SkillController extends Controller
      */
     public function destroy(string $id)
     {
-        $skill = Skill::where('user_id', Auth::id())
+        $skill = UserSkill::where('user_id', Auth::id())
             ->findOrFail($id);
 
         $skill->delete();

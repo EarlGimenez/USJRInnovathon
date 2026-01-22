@@ -1,0 +1,6 @@
+kagglehub>=0.2.7
+pandas>=2.2.0
+numpy>=1.26.0
+sentence-transformers>=3.0.0
+torch
+openpyxl>=3.1.0
