@@ -182,7 +182,6 @@ export default function MapView() {
 
     const handleSearchSubmit = () => {
         setSearchQuery(pendingSearchQuery);
-        fetchData();
     };
 
     const handleItemClick = (item) => {
