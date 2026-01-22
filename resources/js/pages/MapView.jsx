@@ -35,7 +35,7 @@ export default function MapView() {
     const [mapCenter, setMapCenter] = useState([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng]);
     const [userCity, setUserCity] = useState(DEFAULT_LOCATION.city);
     const [locationLoading, setLocationLoading] = useState(true);
-    const [weakSkills, setWeakSkills] = useState([]);
+    const [cacheStatus, setCacheStatus] = useState(''); // 'cached' or 'fresh'
     
     // Agent welcome banner state
     const [showAgentBanner, setShowAgentBanner] = useState(fromAgent);
@@ -47,6 +47,66 @@ export default function MapView() {
             setUserSkills(agentData.skills);
         }
     }, [agentData]);
+
+    // Read URL search parameters on mount to restore search state
+    useEffect(() => {
+        const urlParams = new URLSearchParams(location.search);
+        const queryParam = urlParams.get('query');
+        const cityParam = urlParams.get('city');
+        const latParam = urlParams.get('lat');
+        const lngParam = urlParams.get('lng');
+
+        // Also check localStorage for persisted search state
+        const persistedState = localStorage.getItem('mapSearchState');
+        let searchState = null;
+        if (persistedState) {
+            try {
+                searchState = JSON.parse(persistedState);
+            } catch (e) {
+                console.error('Error parsing persisted search state:', e);
+            }
+        }
+
+        // Priority: URL params > localStorage > defaults
+        if (queryParam) {
+            console.log('Restoring search state from URL:', { queryParam, cityParam, latParam, lngParam });
+            setSearchQuery(queryParam);
+            setPendingSearchQuery(queryParam);
+        } else if (searchState?.query) {
+            console.log('Restoring search state from localStorage:', searchState);
+            setSearchQuery(searchState.query);
+            setPendingSearchQuery(searchState.query);
+        }
+
+        if (cityParam) {
+            setUserCity(cityParam);
+        } else if (searchState?.city) {
+            setUserCity(searchState.city);
+        }
+
+        if (latParam && lngParam) {
+            const lat = parseFloat(latParam);
+            const lng = parseFloat(lngParam);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                setMapCenter([lat, lng]);
+            }
+        } else if (searchState?.mapCenter) {
+            setMapCenter(searchState.mapCenter);
+        }
+    }, []); // Only run on mount
+
+    // Persist search state to localStorage when it changes
+    useEffect(() => {
+        if (!locationLoading) {
+            const searchState = {
+                query: searchQuery,
+                city: userCity,
+                mapCenter: mapCenter
+            };
+            localStorage.setItem('mapSearchState', JSON.stringify(searchState));
+            console.log('Saved search state to localStorage:', searchState);
+        }
+    }, [searchQuery, userCity, mapCenter, locationLoading]);
 
     // Get user's current location on mount
     useEffect(() => {
@@ -102,6 +162,68 @@ export default function MapView() {
         );
     };
 
+    // Cache management functions
+    // This caching system prevents excessive API calls by storing results in sessionStorage
+    // Cache keys are based on: tab-filter-query-city-lat-lng
+    // Cache expires after 24 hours
+    // New searches clear the cache to ensure fresh data
+    const getCacheKey = (tab, filter, query, city, lat, lng) => {
+        return `${tab}-${filter}-${query}-${city}-${lat.toFixed(2)}-${lng.toFixed(2)}`;
+    };
+
+    const getCachedData = (cacheKey) => {
+        try {
+            const cached = sessionStorage.getItem(`jobSearch_${cacheKey}`);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                // Check if cache is still valid (24 hours)
+                const cacheTime = parsed.timestamp;
+                const now = Date.now();
+                if (now - cacheTime < 24 * 60 * 60 * 1000) { // 24 hours
+                    return parsed.data;
+                } else {
+                    // Cache expired, remove it
+                    sessionStorage.removeItem(`jobSearch_${cacheKey}`);
+                }
+            }
+        } catch (error) {
+            console.error('Error reading cache:', error);
+        }
+        return null;
+    };
+
+    const setCachedData = (cacheKey, data) => {
+        try {
+            const cacheEntry = {
+                data: data,
+                timestamp: Date.now()
+            };
+            sessionStorage.setItem(`jobSearch_${cacheKey}`, JSON.stringify(cacheEntry));
+        } catch (error) {
+            console.error('Error setting cache:', error);
+        }
+    };
+
+    const clearSearchCache = () => {
+        // Clear all job search related cache entries
+        const keys = Object.keys(sessionStorage);
+        keys.forEach(key => {
+            if (key.startsWith('jobSearch_')) {
+                sessionStorage.removeItem(key);
+            }
+        });
+        console.log('Search cache cleared');
+    };
+
+    // Expose clearSearchCache to window for debugging (optional)
+    if (typeof window !== 'undefined') {
+        window.clearSearchCache = clearSearchCache;
+        window.clearSearchState = () => {
+            localStorage.removeItem('mapSearchState');
+            console.log('Search state cleared');
+        };
+    }
+
     const fetchData = async () => {
         setLoading(true);
         
@@ -110,8 +232,36 @@ export default function MapView() {
         setEvents([]);
         setCourses([]);
         
-        try {
+        // Create cache key based on current parameters
+        const cacheKey = `${activeTab}-${seminarFilter}-${searchQuery}-${userCity}-${mapCenter[0].toFixed(2)}-${mapCenter[1].toFixed(2)}`;
+        
+        // Check cache first
+        const cachedData = getCachedData(cacheKey);
+        if (cachedData) {
+            console.log('Using cached data for:', cacheKey);
+            setCacheStatus('cached');
             if (activeTab === 'jobs') {
+                setJobs(cachedData.jobs || []);
+            } else if (activeTab === 'seminars') {
+                if (seminarFilter === 'in-person') {
+                    setEvents(cachedData.events || []);
+                } else {
+                    setCourses(cachedData.courses || []);
+                    if (cachedData.weakSkills) {
+                        setWeakSkills(cachedData.weakSkills);
+                    }
+                }
+            }
+            setLoading(false);
+            return;
+        }
+        
+        try {
+            let response;
+            let cacheData = {};
+            
+            if (activeTab === 'jobs') {
+                response = await axios.get('/api/jobs', {
                 const skillsToUse = agentData?.skills || userSkills;
                 const response = await axios.get('/api/jobs', {
                     params: { 
@@ -123,10 +273,10 @@ export default function MapView() {
                     }
                 });
                 setJobs(response.data.jobs || []);
+                cacheData = { jobs: response.data.jobs || [] };
             } else if (activeTab === 'seminars') {
                 if (seminarFilter === 'in-person') {
-                    // Fetch real events from our scraper
-                    const response = await axios.get('/api/events', {
+                    response = await axios.get('/api/events', {
                         params: { 
                             query: searchQuery, 
                             city: userCity,
@@ -136,9 +286,9 @@ export default function MapView() {
                         }
                     });
                     setEvents(response.data.events || []);
+                    cacheData = { events: response.data.events || [] };
                 } else {
-                    // Fetch recommended courses based on skills
-                    const response = await axios.get('/api/courses', {
+                    response = await axios.get('/api/courses', {
                         params: { 
                             query: searchQuery,
                             skills: userSkills,
@@ -146,13 +296,24 @@ export default function MapView() {
                         }
                     });
                     setCourses(response.data.courses || []);
+                    cacheData = { 
+                        courses: response.data.courses || [],
+                        weakSkills: response.data.weakSkills 
+                    };
                     
                     // Track which skills are weak for display
                     if (response.data.weakSkills) {
                         setWeakSkills(response.data.weakSkills);
+                        cacheData.weakSkills = response.data.weakSkills;
                     }
                 }
             }
+            
+            // Cache the successful response
+            setCachedData(cacheKey, cacheData);
+            setCacheStatus('fresh');
+            console.log('Fetched fresh data for:', cacheKey);
+            
         } catch (error) {
             console.error('Error fetching data:', error);
             setJobs([]);
@@ -168,8 +329,9 @@ export default function MapView() {
     };
 
     const handleSearchSubmit = () => {
+        // Clear cache when performing a new search to ensure fresh data
+        clearSearchCache();
         setSearchQuery(pendingSearchQuery);
-        fetchData();
     };
 
     const handleItemClick = (item) => {
@@ -380,6 +542,15 @@ export default function MapView() {
                                  activeTab === 'seminars' && seminarFilter === 'online' ? 'Recommended for your skill gaps' :
                                  activeTab === 'seminars' && seminarFilter === 'in-person' ? 'Nearby seminars and events' : 
                                  'Sorted by skill match'} - {sortedItems.length} results
+                                {cacheStatus && (
+                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                                        cacheStatus === 'cached' 
+                                            ? 'bg-green-100 text-green-700' 
+                                            : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        {cacheStatus === 'cached' ? '⚡ Cached' : '🔄 Fresh'}
+                                    </span>
+                                )}
                             </p>
                             {/* Weak Skills Indicator for Online Courses */}
                             {activeTab === 'seminars' && seminarFilter === 'online' && weakSkills.length > 0 && (
@@ -400,6 +571,15 @@ export default function MapView() {
                              seminarFilter === 'in-person' ? 'In-Person Seminars' : 'Online Courses'}
                             <span className="text-sm font-normal text-gray-500 ml-2">
                                 ({sortedItems.length} found)
+                                {cacheStatus && (
+                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                                        cacheStatus === 'cached' 
+                                            ? 'bg-green-100 text-green-700' 
+                                            : 'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        {cacheStatus === 'cached' ? '⚡' : '🔄'}
+                                    </span>
+                                )}
                             </span>
                         </h2>
                         
