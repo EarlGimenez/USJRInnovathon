@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\JobPostingRankingService;
+use App\Services\JobSkillExtractionService;
+use App\Services\SkillAlignmentService;
 use Illuminate\Http\Request;
 
 class JobController extends Controller
@@ -18,8 +21,15 @@ class JobController extends Controller
         $lat = (float) ($request->input('lat') ?? 14.5995); // Manila default
         $lng = (float) ($request->input('lng') ?? 120.9842);
 
+        $candidateSkills = $request->input('candidate_skills');
+        if (!is_array($candidateSkills)) {
+            $candidateSkills = null;
+        }
+
+        $similarityThreshold = (float) ($request->input('similarity_threshold') ?? 0.75);
+
         // Get real jobs from Python script
-        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng);
+        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng, $candidateSkills, $similarityThreshold);
 
         // Don't limit results - return all jobs from the scraper
         // $jobs = array_slice($jobs, 0, $this->maxResults);
@@ -43,8 +53,15 @@ class JobController extends Controller
         $lat = (float) ($request->input('lat') ?? 14.5995);
         $lng = (float) ($request->input('lng') ?? 120.9842);
 
+        $candidateSkills = $request->input('candidate_skills');
+        if (!is_array($candidateSkills)) {
+            $candidateSkills = null;
+        }
+
+        $similarityThreshold = (float) ($request->input('similarity_threshold') ?? 0.75);
+
         // Get jobs from Python script with current search context
-        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng);
+        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng, $candidateSkills, $similarityThreshold);
 
         // Find job by ID (use index as ID since Python script doesn't provide IDs)
         $jobIndex = (int)$id - 1; // Convert to 0-based index
@@ -63,14 +80,26 @@ class JobController extends Controller
     /**
      * Execute Python script to get real job data
      */
-    protected function getJobsFromPythonScript(string $jobTitle, string $location, float $lat, float $lng): array
+    protected function getJobsFromPythonScript(
+        string $jobTitle,
+        string $location,
+        float $lat,
+        float $lng,
+        ?array $candidateSkills = null,
+        float $similarityThreshold = 0.75
+    ): array
     {
         try {
+            // Keep automated tests fast and deterministic.
+            if (app()->environment('testing')) {
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
             // Path to Python script
             $scriptPath = base_path('python_scripts/job_listing_scraper.py');
 
             // Execute Python script with arguments
-            $command = "cd " . base_path() . " && uv run python_scripts/job_listing_scraper.py \"$jobTitle\" \"$location\" 2>&1";
+            $command = "cd " . escapeshellarg(base_path()) . " && uv run python_scripts/job_listing_scraper.py " . escapeshellarg($jobTitle) . " " . escapeshellarg($location) . " 2>&1";
             $output = shell_exec($command);
 
             if (!$output) {
@@ -91,6 +120,40 @@ class JobController extends Controller
             if (!$pythonJobs || !is_array($pythonJobs)) {
                 // Fallback to mock data if JSON parsing fails
                 return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            // Build requiredSkills using LLM extraction + cosine alignment (no randomization)
+            foreach ($pythonJobs as $i => $job) {
+                if (!is_array($job)) {
+                    continue;
+                }
+                $pythonJobs[$i]['requiredSkills'] = $this->buildRequiredSkillsForJob($job);
+            }
+
+            // Trigger ranking BEFORE converting to frontend format
+            if (is_array($candidateSkills) && count($candidateSkills) > 0) {
+                $alignment = app(SkillAlignmentService::class);
+                $candidateSkills = $alignment->canonicalizeCandidateSkills($candidateSkills);
+
+                $ranking = app(JobPostingRankingService::class);
+                $ranked = $ranking->rank($candidateSkills, $pythonJobs, $similarityThreshold);
+
+                $ordered = [];
+                foreach ($ranked as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $job = $row['job'] ?? null;
+                    if (!is_array($job)) {
+                        continue;
+                    }
+                    $job['_match'] = $row['result'] ?? null;
+                    $ordered[] = $job;
+                }
+
+                if (count($ordered) > 0) {
+                    $pythonJobs = $ordered;
+                }
             }
 
             // Transform Python job data to frontend format
@@ -117,14 +180,12 @@ class JobController extends Controller
             $latitude = $centerLat + $latOffset;
             $longitude = $centerLng + $lngOffset;
 
-            // Convert tags to requiredSkills (limit to 5, randomize values)
+            // requiredSkills are extracted by an LLM and aligned to the `skills` table via cosine similarity.
             $requiredSkills = [];
-            $tags = $job['tags'] ?? [];
-            if (is_array($tags)) {
-                $topTags = array_slice($tags, 0, 5); // Take top 5 tags
-                foreach ($topTags as $tag) {
-                    $requiredSkills[$tag] = mt_rand(40, 90); // Random skill level 40-90%
-                }
+            if (isset($job['requiredSkills']) && is_array($job['requiredSkills']) && count($job['requiredSkills']) > 0) {
+                $requiredSkills = $job['requiredSkills'];
+            } else {
+                $requiredSkills = $this->buildRequiredSkillsForJob(is_array($job) ? $job : []);
             }
 
             // Generate basic responsibilities and qualifications
@@ -158,13 +219,38 @@ class JobController extends Controller
                 'responsibilities' => $responsibilities,
                 'qualifications' => $qualifications,
                 'url' => $job['url'] ?? null,
-                'source' => $job['source'] ?? 'Unknown'
+                'source' => $job['source'] ?? 'Unknown',
+                'match' => $job['_match'] ?? null,
             ];
 
             $id++;
         }
 
         return $transformedJobs;
+    }
+
+    /**
+     * Build requiredSkills from job content using:
+     * 1) LLM extraction (JobSkillExtractionService)
+     * 2) Align extracted skills to canonical `skills` table using cosine similarity (SkillAlignmentService)
+     *
+     * @return array<string, int> map skill => 0..100
+     */
+    protected function buildRequiredSkillsForJob(array $job): array
+    {
+        $extractor = app(JobSkillExtractionService::class);
+        $alignment = app(SkillAlignmentService::class);
+
+        $rawSkills = $extractor->extractSkills($job, 8);
+        $aligned = $alignment->alignToCanonicalSkills($rawSkills, 5);
+
+        $required = [];
+        foreach ($aligned as $skill => $sim) {
+            $score = (int) round(max(0.0, min(1.0, (float) $sim)) * 100);
+            $required[$skill] = $score;
+        }
+
+        return $required;
     }
 
     /**
