@@ -3,9 +3,15 @@
 namespace App\Services;
 
 use InvalidArgumentException;
+use App\Services\SkillEmbeddingService;
 
 class JobMatchService
 {
+    public function __construct(
+        private readonly ?SkillEmbeddingService $embeddingService = null
+    ) {
+    }
+
     /**
      * Compute matching metrics between a job's required skills and a candidate profile.
      *
@@ -27,7 +33,7 @@ class JobMatchService
      * - evidence_sum (int)
      * - breadth (int)                             // |SCvalid|
      */
-    public function compute(array $jobSkills, array $candidateSkills): array
+    public function compute(array $jobSkills, array $candidateSkills, float $similarityThreshold = 0.75): array
     {
         $jobSkillSet = $this->normalizeSkillListToSet($jobSkills);
         $SJ = array_keys($jobSkillSet);
@@ -37,25 +43,6 @@ class JobMatchService
         }
 
         $candidateSkillMap = $this->normalizeCandidateSkillsToMap($candidateSkills);
-
-        $SC = array_keys($candidateSkillMap);
-        $missingSkills = array_values(array_diff($SJ, $SC));
-
-        // Early reject if no overlap at all (|SJ \ SC| == |SJ|)
-        if (count($missingSkills) === count($SJ)) {
-            return [
-                'rejected' => true,
-                'rejection_reason' => 'no_overlap',
-                'missing_skills' => $missingSkills,
-                'matched_skills' => [],
-                'score_raw' => 0,
-                'score' => 0.0,
-                'coverage' => 0.0,
-                'coverage_label' => 'No validated skills',
-                'evidence_sum' => 0,
-                'breadth' => 0,
-            ];
-        }
 
         // SCvalid = { s ∈ SC | evidence(s) ≥ 1 }
         $SCvalid = [];
@@ -72,22 +59,60 @@ class JobMatchService
 
         $breadth = count($SCvalid);
 
-        // Intersection: SCvalid ∩ SJ
-        $matchedSkills = array_values(array_intersect($SJ, array_keys($SCvalid)));
+        // Semantic matching (cosine similarity) between job skills and candidate skills.
+        // For each job skill, find the best candidate skill match.
+        $matchedSkills = [];
+        $matchedPairs = []; // job_skill => [candidate_skill, similarity, evidence]
+        foreach ($SJ as $jobSkill) {
+            $best = $this->bestCandidateMatch($jobSkill, array_keys($SCvalid));
+            if ($best === null) {
+                continue;
+            }
+
+            if ($best['similarity'] >= $similarityThreshold) {
+                $matchedSkills[] = $jobSkill;
+                $matchedPairs[$jobSkill] = [
+                    'candidate_skill' => $best['candidate_skill'],
+                    'similarity' => round($best['similarity'], 4),
+                    'evidence' => $SCvalid[$best['candidate_skill']]['evidence'] ?? 0,
+                ];
+            }
+        }
+
+        $matchedSkills = array_values(array_unique($matchedSkills));
+        $missingSkills = array_values(array_diff($SJ, $matchedSkills));
+
+        // Early reject if no validated matches at all
+        if (count($matchedSkills) === 0) {
+            return [
+                'rejected' => true,
+                'rejection_reason' => 'no_overlap',
+                'missing_skills' => $missingSkills,
+                'matched_skills' => [],
+                'matched_pairs' => [],
+                'score_raw' => 0,
+                'score' => 0.0,
+                'coverage' => 0.0,
+                'coverage_label' => 'No validated skills',
+                'evidence_sum' => 0,
+                'breadth' => $breadth,
+            ];
+        }
 
         $scoreRaw = count($matchedSkills);
         $coverage = $scoreRaw / count($SJ);
         $score = $coverage * 100;
 
         $evidenceSum = 0;
-        foreach ($matchedSkills as $skill) {
-            $evidenceSum += $SCvalid[$skill]['evidence'];
+        foreach ($matchedPairs as $pair) {
+            $evidenceSum += (int) ($pair['evidence'] ?? 0);
         }
 
         return [
             'rejected' => false,
             'missing_skills' => $missingSkills,
             'matched_skills' => $matchedSkills,
+            'matched_pairs' => $matchedPairs,
             'score_raw' => $scoreRaw,
             'score' => round($score, 2),
             'coverage' => round($coverage, 4),
@@ -95,6 +120,83 @@ class JobMatchService
             'evidence_sum' => $evidenceSum,
             'breadth' => $breadth,
         ];
+    }
+
+    private function bestCandidateMatch(string $jobSkill, array $candidateSkills): ?array
+    {
+        if (count($candidateSkills) === 0) {
+            return null;
+        }
+
+        $jobSkillNorm = $this->normalizeSkill($jobSkill);
+        $bestSkill = null;
+        $bestSim = 0.0;
+
+        // Exact match short-circuit
+        foreach ($candidateSkills as $cand) {
+            if ($cand === $jobSkillNorm) {
+                return [
+                    'candidate_skill' => $cand,
+                    'similarity' => 1.0,
+                ];
+            }
+        }
+
+        // Try semantic match using embeddings (if available)
+        $embeddingService = $this->embeddingService ?? app(SkillEmbeddingService::class);
+        $jobVec = $embeddingService->getEmbeddingVector($jobSkillNorm);
+        if ($jobVec === null) {
+            return null;
+        }
+
+        foreach ($candidateSkills as $cand) {
+            $candVec = $embeddingService->getEmbeddingVector($cand);
+            if ($candVec === null) {
+                continue;
+            }
+
+            $sim = $this->cosineSimilarity($jobVec, $candVec);
+            if ($sim > $bestSim) {
+                $bestSim = $sim;
+                $bestSkill = $cand;
+            }
+        }
+
+        if ($bestSkill === null) {
+            return null;
+        }
+
+        return [
+            'candidate_skill' => $bestSkill,
+            'similarity' => $bestSim,
+        ];
+    }
+
+    /** @param float[] $a @param float[] $b */
+    private function cosineSimilarity(array $a, array $b): float
+    {
+        $n = min(count($a), count($b));
+        if ($n === 0) {
+            return 0.0;
+        }
+
+        $dot = 0.0;
+        $na = 0.0;
+        $nb = 0.0;
+
+        for ($i = 0; $i < $n; $i++) {
+            $av = (float) $a[$i];
+            $bv = (float) $b[$i];
+            $dot += $av * $bv;
+            $na += $av * $av;
+            $nb += $bv * $bv;
+        }
+
+        if ($na <= 0.0 || $nb <= 0.0) {
+            return 0.0;
+        }
+
+        return $dot / (sqrt($na) * sqrt($nb));
     }
 
     private function normalizeSkill(string $skill): string

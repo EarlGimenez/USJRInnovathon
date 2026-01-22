@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\AgentMatchController;
+use App\Http\Controllers\Api\AgentJobRankController;
 use App\Http\Controllers\Api\ResumeController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SkillController;
@@ -41,3 +42,8 @@ Route::get('/events/skill/{skill}', [EventController::class, 'bySkill']);
 Route::get('/courses', [CourseController::class, 'index']);
 Route::get('/courses/recommended', [CourseController::class, 'recommended']);
 Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
+
+// Agent triggers
+Route::post('/agent/match-score', [AgentMatchController::class, 'score']);
+Route::post('/agent/rank-jobs', [AgentJobRankController::class, 'rankJobs']);
+
