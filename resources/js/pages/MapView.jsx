@@ -37,6 +37,7 @@ export default function MapView() {
     const [userCity, setUserCity] = useState(DEFAULT_LOCATION.city);
     const [locationLoading, setLocationLoading] = useState(true);
     const [cacheStatus, setCacheStatus] = useState(''); // 'cached' or 'fresh'
+    const [weakSkills, setWeakSkills] = useState([]); // Skills that need improvement
     
     // Agent welcome banner state
     const [showAgentBanner, setShowAgentBanner] = useState(fromAgent);
