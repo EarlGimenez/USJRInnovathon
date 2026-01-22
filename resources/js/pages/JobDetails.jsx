@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import SkillRadarChart from '../components/charts/SkillRadarChart';
 import { useSkills } from '../context/SkillContext';
@@ -8,23 +8,30 @@ export default function JobDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const location = useLocation();
     const { userSkills, calculateMatchPercentage } = useSkills();
     
-    const [job, setJob] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [job, setJob] = useState(location.state?.job || null);
+    const [loading, setLoading] = useState(!job);
 
     useEffect(() => {
         fetchJobDetails();
     }, [id]);
 
     const fetchJobDetails = async () => {
+        // If we already have job data from navigation state, try to fetch additional details
+        if (job) {
+            setLoading(false);
+            return;
+        }
+        
         setLoading(true);
         try {
-            // Include search context from URL parameters
-            const query = searchParams.get('query') || 'developer';
-            const city = searchParams.get('city') || 'Manila';
-            const lat = searchParams.get('lat') || '14.5995';
-            const lng = searchParams.get('lng') || '120.9842';
+            // Include search context from URL parameters or state
+            const query = searchParams.get('query') || location.state?.searchQuery || 'developer';
+            const city = searchParams.get('city') || location.state?.userCity || 'Manila';
+            const lat = searchParams.get('lat') || location.state?.mapCenter?.[0] || '14.5995';
+            const lng = searchParams.get('lng') || location.state?.mapCenter?.[1] || '120.9842';
             
             const response = await axios.get(`/api/jobs/${id}`, {
                 params: { query, city, lat, lng }
@@ -32,8 +39,10 @@ export default function JobDetails() {
             setJob(response.data.job);
         } catch (error) {
             console.error('Error fetching job details:', error);
-            // Use mock data for demo
-            setJob(getMockJob(id));
+            // Only use mock data if we don't have job data from navigation state
+            if (!job) {
+                setJob(getMockJob(id));
+            }
         }
         setLoading(false);
     };
