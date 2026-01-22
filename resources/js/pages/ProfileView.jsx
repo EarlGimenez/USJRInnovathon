@@ -114,8 +114,9 @@ const ProfileView = () => {
         <div className="min-h-screen bg-gray-50">
             <div className="max-w-4xl mx-auto px-4 py-6">
                 {/* Header */}
-                <header className="mb-6">
+                <header className="mb-6 flex items-center justify-between">
                     <h1 className="text-xl font-bold" style={{ color: '#181818' }}>My Profile</h1>
+                    <img src="/lookal_logo.png" alt="Lookal" className="h-8" />
                 </header>
 
                 {/* Profile Card Section */}

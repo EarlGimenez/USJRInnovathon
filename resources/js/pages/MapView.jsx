@@ -182,7 +182,7 @@ export default function MapView() {
     if (skillsLoading || locationLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 mb-4" style={{ borderColor: '#114124' }}></div>
                 <p className="text-gray-600">
                     {locationLoading ? 'Detecting your location...' : 'Loading your skills...'}
                 </p>
@@ -225,9 +225,7 @@ export default function MapView() {
                     <div className="flex items-center justify-between mb-3">
                         <div>
                             <Link to="/" className="hover:opacity-80 transition-opacity">
-                                <h1 className="text-xl lg:text-2xl font-bold text-blue-600">
-                                    SkillMatch
-                                </h1>
+                                <img src="/lookal_logo.png" alt="Lookal" className="h-7 lg:h-8" />
                             </Link>
                             <p className="text-xs text-gray-500 flex items-center gap-1">
                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -288,7 +286,7 @@ export default function MapView() {
                         
                         {loading ? (
                             <div className="flex justify-center py-8">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: '#114124' }}></div>
                             </div>
                         ) : sortedItems.length === 0 ? (
                             <p className="text-gray-500 text-center py-8">
@@ -311,7 +309,10 @@ export default function MapView() {
                                                     e.stopPropagation();
                                                     handleApplyClick(item);
                                                 }}
-                                                className="absolute bottom-3 right-3 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1"
+                                                className="absolute bottom-3 right-3 px-3 py-1.5 text-white text-xs font-medium rounded-lg transition-colors shadow-sm flex items-center gap-1"
+                                                style={{ backgroundColor: '#114124' }}
+                                                onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                                                onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
                                             >
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

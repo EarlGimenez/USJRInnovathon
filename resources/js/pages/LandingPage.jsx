@@ -40,16 +40,11 @@ export default function LandingPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col">
+        <div className="min-h-screen bg-white flex flex-col">
             {/* Header */}
             <header className="py-6 px-4">
-                <div className="max-w-4xl mx-auto">
-                    <h1 className="text-3xl md:text-4xl font-bold text-blue-600 text-center">
-                        SkillMatch
-                    </h1>
-                    <p className="text-gray-500 text-center mt-1 text-sm">
-                        AI-Powered Job Matching
-                    </p>
+                <div className="max-w-4xl mx-auto flex justify-center">
+                    <img src="/lookal_logo.png" alt="Lookal" className="h-12" />
                 </div>
             </header>
 
@@ -58,12 +53,12 @@ export default function LandingPage() {
                 <div className="w-full max-w-2xl">
                     {/* Hero Section */}
                     <div className="text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-100 rounded-full mb-6">
-                            <svg className="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-6" style={{ backgroundColor: '#e8f5e9' }}>
+                            <svg className="w-10 h-10" style={{ color: '#114124' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                             </svg>
                         </div>
-                        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">
+                        <h2 className="text-2xl md:text-3xl font-bold mb-3" style={{ color: '#181818' }}>
                             Tell me about yourself
                         </h2>
                         <p className="text-gray-600 max-w-md mx-auto">
@@ -85,7 +80,10 @@ export default function LandingPage() {
                     {/* Manual Search Button */}
                     <button
                         onClick={handleManualSearch}
-                        className="w-full py-4 px-6 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:border-blue-400 hover:bg-blue-50 transition-all flex items-center justify-center gap-3"
+                        className="w-full py-4 px-6 border-2 rounded-xl font-medium transition-all flex items-center justify-center gap-3"
+                        style={{ borderColor: '#114124', color: '#114124' }}
+                        onMouseEnter={(e) => { e.target.style.backgroundColor = '#e8f5e9'; }}
+                        onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; }}
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -118,7 +116,7 @@ export default function LandingPage() {
 
             {/* Footer */}
             <footer className="py-4 text-center text-xs text-gray-400">
-                Powered by AI • SkillMatch 2026
+                Powered by AI • Lookal 2026
             </footer>
         </div>
     );
