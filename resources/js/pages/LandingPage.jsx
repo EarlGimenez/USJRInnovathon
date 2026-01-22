@@ -269,6 +269,24 @@ export default function LandingPage() {
     const handlePromptSubmit = async (prompt) => {
         setIsProcessing(true);
         setError(null);
+        // Seed placeholder data immediately so LoadingSequence renders during processing.
+        setAgenticData({
+            intent: 'LOADING',
+            prompt,
+            query: '',
+            extracted_skills: [],
+            jobs: [],
+            trainings: [],
+            results: [],
+            ui: {
+                default_tab: 'jobs',
+                default_seminar_filter: 'online',
+                show_skill_gap_popup: false,
+                popup_title: '',
+                popup_body: '',
+                suggested_next_steps: [],
+            },
+        });
 
         try {
             // Optional: Log to backend (don't fail if backend is down)
