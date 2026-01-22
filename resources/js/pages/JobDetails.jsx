@@ -13,6 +13,89 @@ export default function JobDetails() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    const normalizeSkillsForApi = (skills) => {
+        // Agent flow: array of skill strings
+        if (Array.isArray(skills)) {
+            const normalized = skills
+                .map((s) => (typeof s === 'string' ? s : (s?.name ?? s?.label ?? s?.value ?? '')))
+                .map((s) => (typeof s === 'string' ? s.trim() : ''))
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        // Demo session: category->level map
+        if (skills && typeof skills === 'object') {
+            const normalized = Object.entries(skills)
+                .filter(([_, v]) => typeof v === 'number' && !Number.isNaN(v) && v >= 50)
+                .map(([k]) => String(k).trim())
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        return undefined;
+    };
+
+    const mapRequiredSkillToCategory = (rawSkill) => {
+        const skill = String(rawSkill || '').toLowerCase();
+        if (!skill) return null;
+
+        if (
+            skill.includes('javascript') || skill.includes('typescript') || skill.includes('react') ||
+            skill.includes('node') || skill.includes('php') || skill.includes('laravel') ||
+            skill.includes('python') || skill.includes('java') || skill.includes('c#') ||
+            skill.includes('html') || skill.includes('css') || skill.includes('api')
+        ) return 'Programming';
+
+        if (
+            skill.includes('figma') || skill.includes('sketch') || skill.includes('adobe') ||
+            skill.includes('photoshop') || skill.includes('illustrator') || skill.includes('xd') ||
+            skill.includes('canva')
+        ) return 'Tools';
+
+        if (skill.includes('ui') || skill.includes('ux') || skill.includes('design') || skill.includes('wireframe')) {
+            return 'Design';
+        }
+
+        if (skill.includes('prototype') || skill.includes('prototyp')) return 'Prototyping';
+
+        if (
+            skill.includes('research') || skill.includes('user testing') || skill.includes('usability') ||
+            skill.includes('interview')
+        ) return 'Research';
+
+        if (
+            skill.includes('sql') || skill.includes('excel') || skill.includes('tableau') ||
+            skill.includes('power bi') || skill.includes('analytics') || skill.includes('data') ||
+            skill.includes('statistics')
+        ) return 'Data Analysis';
+
+        if (
+            skill.includes('communication') || skill.includes('collaboration') || skill.includes('teamwork') ||
+            skill.includes('stakeholder') || skill.includes('presentation') || skill.includes('writing')
+        ) return 'Communication';
+
+        if (
+            skill.includes('lead') || skill.includes('management') || skill.includes('mentor') ||
+            skill.includes('strategy')
+        ) return 'Leadership';
+
+        return null;
+    };
+
+    const buildCategoryRequirementsFromRequiredSkills = (requiredSkills) => {
+        if (!requiredSkills || typeof requiredSkills !== 'object') return null;
+
+        const requiredByCategory = {};
+        Object.keys(requiredSkills).forEach((skillName) => {
+            const category = mapRequiredSkillToCategory(skillName);
+            if (category) {
+                requiredByCategory[category] = 70;
+            }
+        });
+
+        return Object.keys(requiredByCategory).length > 0 ? requiredByCategory : null;
+    };
+
     useEffect(() => {
         fetchJobDetails();
     }, [id, userSkills]);
@@ -28,12 +111,7 @@ export default function JobDetails() {
             const lng = searchParams.get('lng') || '120.9842';
             const radiusKm = searchParams.get('radius_km') || '3';
 
-            const normalizedSkills = Array.isArray(userSkills)
-                ? userSkills
-                    .map((s) => (typeof s === 'string' ? s : (s?.name ?? s?.label ?? s?.value ?? '')))
-                    .map((s) => (typeof s === 'string' ? s.trim() : ''))
-                    .filter(Boolean)
-                : undefined;
+            const normalizedSkills = normalizeSkillsForApi(userSkills);
             
             const response = await axios.get(`/api/jobs/${id}`, {
                 params: {
@@ -43,7 +121,7 @@ export default function JobDetails() {
                     lng,
                     radius_km: radiusKm,
                     // Ensure backend can compute and return match results.
-                    candidate_skills: normalizedSkills && normalizedSkills.length > 0 ? normalizedSkills : undefined,
+                    candidate_skills: normalizedSkills,
                 }
             });
             setJob(response.data.job);
@@ -84,9 +162,16 @@ export default function JobDetails() {
     }
 
     const backendScore = job?.match?.score;
-    const matchPercentage = (typeof backendScore === 'number' && !Number.isNaN(backendScore))
-        ? Math.round(backendScore)
-        : calculateMatchPercentage(job.requiredSkills || {});
+    let matchPercentage;
+    if (typeof backendScore === 'number' && !Number.isNaN(backendScore)) {
+        matchPercentage = Math.round(backendScore);
+    } else if (userSkills && typeof userSkills === 'object' && !Array.isArray(userSkills)) {
+        // Category-based demo profile; map required skills to categories before scoring.
+        const requiredByCategory = buildCategoryRequirementsFromRequiredSkills(job.requiredSkills || {});
+        matchPercentage = calculateMatchPercentage(requiredByCategory || {});
+    } else {
+        matchPercentage = calculateMatchPercentage(job.requiredSkills || {});
+    }
 
     const matchBadgeClass = matchPercentage >= 80
         ? 'bg-green-100 text-green-800'
