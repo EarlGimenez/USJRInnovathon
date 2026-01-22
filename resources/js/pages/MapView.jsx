@@ -192,7 +192,7 @@ export default function MapView() {
                 fetchData();
             }
         }
-    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery, radiusKm]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgentic, searchQuery, radiusKm]);
 
     const normalizeSkillsForApi = (skills) => {
         // Agent flow often provides an array of skill strings.
@@ -427,7 +427,7 @@ export default function MapView() {
             let cacheData = {};
             
             if (activeTab === 'jobs') {
-                const skillsToUse = normalizeSkillsForApi(agentData?.skills || userSkills);
+                const skillsToUse = normalizeSkillsForApi(agenticData?.skills || userSkills);
                 const response = await axios.get('/api/jobs', {
                     params: { 
                         query: searchQuery, 
