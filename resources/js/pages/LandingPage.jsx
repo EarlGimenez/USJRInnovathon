@@ -1,12 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import AgentPromptBox from '../components/agent/AgentPromptBox';
 import LoadingSequence from '../components/agent/LoadingSequence';
+import { routeUserIntent, jobSearchAgent, trainingSearchAgent } from '../services/agentService';
+import { getLatestProfile, updateProfileFromPrompt, getDefaultProfile } from '../services/userProfileService';
 
 export default function LandingPage() {
     const navigate = useNavigate();
     const [isProcessing, setIsProcessing] = useState(false);
-    const [extractedData, setExtractedData] = useState(null);
+    const [agenticData, setAgenticData] = useState(null);
+    const [error, setError] = useState(null);
+    const [userProfile, setUserProfile] = useState(null);
+
+    // Load user profile on mount
+    useEffect(() => {
+        loadProfile();
+    }, []);
+
+    const loadProfile = async () => {
+        try {
+            const profile = await getLatestProfile();
+            if (profile) {
+                setUserProfile(profile);
+                console.log('✅ Loaded user profile:', profile);
+            } else {
+                const defaultProfile = getDefaultProfile();
+                setUserProfile(defaultProfile);
+                console.log('Using default profile:', defaultProfile);
+            }
+        } catch (error) {
+            console.error('Error loading profile:', error);
+            setUserProfile(getDefaultProfile());
+        }
+    };
 
     const handleManualSearch = () => {
         navigate('/map');
@@ -14,26 +41,125 @@ export default function LandingPage() {
 
     const handlePromptSubmit = async (prompt) => {
         setIsProcessing(true);
-        
-        // Extract skills and preferences from the user's prompt
-        const extracted = extractSkillsFromPrompt(prompt);
-        setExtractedData(extracted);
+        setError(null);
+
+        try {
+            // Optional: Log to backend (don't fail if backend is down)
+            try {
+                await axios.post('/api/prompt-ai', {
+                    user_id: 1,
+                    prompt: prompt
+                });
+            } catch (backendErr) {
+                console.warn('Backend logging failed, continuing with AI processing:', backendErr);
+            }
+
+            // Process with frontend AI agents (LangChain)
+            console.log('Processing prompt with LangChain agents...');
+            
+            // Determine intent
+            const intentResult = await routeUserIntent(prompt);
+            console.log('Detected intent:', intentResult);
+
+            let extractedData;
+            let results = [];
+
+            if (intentResult.intent === 'job') {
+                // Extract job search parameters
+                extractedData = await jobSearchAgent(prompt);
+                console.log('Extracted job parameters:', extractedData);
+                
+                // Mock job results
+                results = Array(5).fill(null).map((_, i) => ({
+                    id: i + 1,
+                    title: `${extractedData.query || 'Job'} Position ${i + 1}`,
+                    company: `Company ${i + 1}`,
+                    location: extractedData.location,
+                    type: 'job'
+                }));
+
+                setAgenticData({
+                    intent: 'job',
+                    prompt: prompt,
+                    extracted_skills: extractedData.skills || [],
+                    results: results,
+                    has_skill_gap: false,
+                    skill_gaps: [],
+                    match_percentage: 100
+                });
+
+                // Update user profile with extracted data
+                try {
+                    const updatedProfile = await updateProfileFromPrompt(extractedData, userProfile);
+                    setUserProfile(updatedProfile);
+                    console.log('✅ Profile updated:', updatedProfile);
+                } catch (profileErr) {
+                    console.warn('Failed to update profile:', profileErr);
+                }
+
+            } else {
+                // Extract training search parameters
+                extractedData = await trainingSearchAgent(prompt);
+                console.log('Extracted training parameters:', extractedData);
+                
+                // Mock training results
+                results = Array(5).fill(null).map((_, i) => ({
+                    id: i + 1,
+                    title: `${extractedData.topic || 'Training'} Workshop ${i + 1}`,
+                    organizer: `Provider ${i + 1}`,
+                    location: extractedData.location,
+                    type: 'seminar'
+                }));
+
+                setAgenticData({
+                    intent: 'seminar',
+                    prompt: prompt,
+                    extracted_skills: extractedData.topic ? [extractedData.topic] : [],
+                    results: results,
+                    has_skill_gap: false,
+                    skill_gaps: [],
+                    match_percentage: 100
+                });
+
+                // Update profile for training searches too
+                try {
+                    const updatedProfile = await updateProfileFromPrompt(
+                        { skills: extractedData.topic ? [extractedData.topic] : [], location: extractedData.location },
+                        userProfile
+                    );
+                    setUserProfile(updatedProfile);
+                    console.log('✅ Profile updated:', updatedProfile);
+                } catch (profileErr) {
+                    console.warn('Failed to update profile:', profileErr);
+                }
+            }
+
+        } catch (err) {
+            console.error('AI processing error:', err);
+            setError(err.message || 'Failed to process your request. Please try again.');
+            setIsProcessing(false);
+
+            setTimeout(() => {
+                setError(null);
+            }, 5000);
+        }
     };
 
     const handleLoadingComplete = () => {
-        // Navigate to map with the extracted data
-        navigate('/map', { 
-            state: { 
-                agentData: extractedData,
-                fromAgent: true 
-            } 
+        // Navigate to map with the agentic workflow results
+        navigate('/map', {
+            state: {
+                agenticData: agenticData,
+                fromAgentic: true
+            }
         });
     };
 
-    if (isProcessing) {
+    // Show loading sequence when processing and data is ready
+    if (isProcessing && agenticData) {
         return (
-            <LoadingSequence 
-                extractedData={extractedData}
+            <LoadingSequence
+                agenticData={agenticData}
                 onComplete={handleLoadingComplete}
             />
         );
@@ -43,10 +169,42 @@ export default function LandingPage() {
         <div className="min-h-screen bg-white flex flex-col">
             {/* Header */}
             <header className="py-6 px-4">
-                <div className="max-w-4xl mx-auto flex justify-center">
+                <div className="max-w-4xl mx-auto flex justify-between items-center">
                     <img src="/lookal_logo.png" alt="Lookal" className="h-12" />
+                    
+                    {/* Profile Indicator */}
+                    {userProfile && (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                                <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div className="text-sm">
+                                <div className="font-medium text-gray-900">{userProfile.name}</div>
+                                <div className="text-gray-500 text-xs">
+                                    {Object.keys(userProfile.skills || {}).length} skills • {userProfile.location}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </header>
+
+            {/* Error Banner */}
+            {error && (
+                <div className="max-w-2xl mx-auto w-full px-4 mb-4">
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-start gap-3">
+                        <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        <div className="flex-1">
+                            <p className="font-medium text-sm">Error</p>
+                            <p className="text-sm">{error}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Main Content */}
             <main className="flex-1 flex items-center justify-center px-4 pb-12">
@@ -59,12 +217,17 @@ export default function LandingPage() {
                             </svg>
                         </div>
                         <h2 className="text-2xl md:text-3xl font-bold mb-3" style={{ color: '#181818' }}>
-                            Tell me about yourself
+                            Tell me what you're looking for
                         </h2>
                         <p className="text-gray-600 max-w-md mx-auto">
-                            Describe your skills, experience, and what you're looking for. 
-                            Our AI will find the perfect job matches for you.
+                            Powered by AI agents, I'll understand your goals and find the perfect matches—jobs or trainings to level up your skills.
                         </p>
+
+                        {/* AI Badge */}
+                        <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-full">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-xs font-medium text-blue-700">Powered by LangGraph AI</span>
+                        </div>
                     </div>
 
                     {/* Agent Prompt Box */}
@@ -96,15 +259,22 @@ export default function LandingPage() {
                         <p className="text-sm text-gray-500 text-center mb-3">Try saying something like:</p>
                         <div className="flex flex-wrap justify-center gap-2">
                             {[
-                                "I'm a UX designer with 3 years experience",
-                                "I know React and Node.js",
-                                "Fresh graduate in Computer Science",
-                                "I'm good at communication and leadership"
+                                "I want to work as a Full Stack Developer",
+                                "I want to improve my React skills",
+                                "Looking for UX Designer jobs in BGC",
+                                "I want to learn Docker and Kubernetes"
                             ].map((example, i) => (
-                                <span 
+                                <span
                                     key={i}
                                     className="px-3 py-1.5 bg-gray-100 rounded-full text-xs text-gray-600 hover:bg-gray-200 cursor-pointer transition-colors"
-                                    onClick={() => document.querySelector('textarea')?.focus()}
+                                    onClick={() => {
+                                        const textarea = document.querySelector('textarea');
+                                        if (textarea) {
+                                            textarea.value = example;
+                                            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                                            textarea.focus();
+                                        }
+                                    }}
                                 >
                                     "{example}"
                                 </span>
@@ -116,81 +286,8 @@ export default function LandingPage() {
 
             {/* Footer */}
             <footer className="py-4 text-center text-xs text-gray-400">
-                Powered by AI • Lookal 2026
+                Powered by LangChain + LangGraph AI • Lookal 2026
             </footer>
         </div>
     );
-}
-
-// Extract skills from natural language prompt
-function extractSkillsFromPrompt(prompt) {
-    const promptLower = prompt.toLowerCase();
-    const skills = {
-        Design: 30,
-        Prototyping: 30,
-        Tools: 30,
-        Research: 30,
-        Communication: 30
-    };
-
-    // Design-related keywords
-    const designKeywords = ['design', 'designer', 'ui', 'ux', 'ui/ux', 'graphic', 'creative', 'visual', 'adobe', 'photoshop', 'illustrator', 'canva', 'branding'];
-    designKeywords.forEach(kw => {
-        if (promptLower.includes(kw)) skills.Design = Math.min(95, skills.Design + 15);
-    });
-
-    // Prototyping keywords
-    const prototypeKeywords = ['figma', 'sketch', 'prototype', 'prototyping', 'wireframe', 'mockup', 'invision', 'xd', 'adobe xd', 'framer'];
-    prototypeKeywords.forEach(kw => {
-        if (promptLower.includes(kw)) skills.Prototyping = Math.min(95, skills.Prototyping + 15);
-    });
-
-    // Tools/Technical keywords
-    const toolsKeywords = ['react', 'node', 'javascript', 'python', 'java', 'code', 'coding', 'programming', 'developer', 'software', 'html', 'css', 'git', 'api', 'database', 'sql', 'typescript', 'vue', 'angular', 'laravel', 'php'];
-    toolsKeywords.forEach(kw => {
-        if (promptLower.includes(kw)) skills.Tools = Math.min(95, skills.Tools + 12);
-    });
-
-    // Research keywords
-    const researchKeywords = ['research', 'analysis', 'data', 'analytics', 'user research', 'market', 'survey', 'study', 'insights', 'testing', 'usability'];
-    researchKeywords.forEach(kw => {
-        if (promptLower.includes(kw)) skills.Research = Math.min(95, skills.Research + 15);
-    });
-
-    // Communication keywords
-    const commKeywords = ['communication', 'leadership', 'team', 'manage', 'management', 'presentation', 'writing', 'client', 'collaboration', 'agile', 'scrum', 'mentor'];
-    commKeywords.forEach(kw => {
-        if (promptLower.includes(kw)) skills.Communication = Math.min(95, skills.Communication + 15);
-    });
-
-    // Experience level boost
-    if (promptLower.includes('senior') || promptLower.includes('lead') || promptLower.includes('manager')) {
-        Object.keys(skills).forEach(k => skills[k] = Math.min(95, skills[k] + 10));
-    }
-    if (promptLower.includes('junior') || promptLower.includes('entry') || promptLower.includes('fresh graduate') || promptLower.includes('intern')) {
-        // Keep skills modest for juniors
-        Object.keys(skills).forEach(k => skills[k] = Math.min(60, skills[k]));
-    }
-
-    // Years of experience parsing
-    const yearsMatch = promptLower.match(/(\d+)\s*years?/);
-    if (yearsMatch) {
-        const years = parseInt(yearsMatch[1]);
-        const boost = Math.min(20, years * 3);
-        Object.keys(skills).forEach(k => skills[k] = Math.min(95, skills[k] + boost));
-    }
-
-    // Extract job preferences
-    const jobTypes = [];
-    if (promptLower.includes('remote')) jobTypes.push('remote');
-    if (promptLower.includes('full-time') || promptLower.includes('full time')) jobTypes.push('full-time');
-    if (promptLower.includes('part-time') || promptLower.includes('part time')) jobTypes.push('part-time');
-    if (promptLower.includes('freelance') || promptLower.includes('contract')) jobTypes.push('freelance');
-
-    return {
-        skills,
-        prompt,
-        jobTypes,
-        timestamp: Date.now()
-    };
 }

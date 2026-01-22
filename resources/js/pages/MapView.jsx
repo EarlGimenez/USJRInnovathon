@@ -8,6 +8,7 @@ import ListingCard from '../components/cards/ListingCard';
 import CourseCard from '../components/cards/CourseCard';
 import EventCard from '../components/cards/EventCard';
 import SkillProfileCard from '../components/cards/SkillProfileCard';
+import SkillGapPopup from '../components/ui/SkillGapPopup';
 import { useSkills } from '../context/SkillContext';
 import { generateMockJobs } from '../services/MockJobGenerator';
 
@@ -19,9 +20,9 @@ export default function MapView() {
     const location = useLocation();
     const { userSkills, calculateMatchPercentage, loading: skillsLoading, setUserSkills } = useSkills();
     
-    // Check if we came from the AI agent flow
-    const agentData = location.state?.agentData;
-    const fromAgent = location.state?.fromAgent;
+    // Check if we came from the agentic workflow
+    const agenticData = location.state?.agenticData;
+    const fromAgentic = location.state?.fromAgentic;
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
     const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
@@ -38,16 +39,62 @@ export default function MapView() {
     const [locationLoading, setLocationLoading] = useState(true);
     const [weakSkills, setWeakSkills] = useState([]);
     
-    // Agent welcome banner state
-    const [showAgentBanner, setShowAgentBanner] = useState(fromAgent);
+    // Agentic workflow states
+    const [showAgentBanner, setShowAgentBanner] = useState(fromAgentic);
+    const [showSkillGapPopup, setShowSkillGapPopup] = useState(false);
 
-    // Apply agent-extracted skills if coming from agent flow
+    // Handle agentic workflow results from LangGraph
     useEffect(() => {
-        if (agentData?.skills && setUserSkills) {
-            // Update user skills with agent-extracted skills
-            setUserSkills(agentData.skills);
+        if (fromAgentic && agenticData) {
+            console.log('📊 Processing agentic data:', agenticData);
+
+            // Set the appropriate tab based on intent from LangGraph
+            if (agenticData.intent === 'SKILL_IMPROVEMENT') {
+                setActiveTab('seminars');
+                setSeminarFilter('online'); // Show online courses for skill improvement
+            } else {
+                setActiveTab('jobs');
+            }
+
+            // Load jobs from LangGraph agentic data
+            if (agenticData.jobs && agenticData.jobs.length > 0) {
+                console.log(`✅ Loading ${agenticData.jobs.length} jobs from LangGraph`);
+                setJobs(agenticData.jobs);
+            }
+
+            // Load trainings from LangGraph agentic data
+            if (agenticData.trainings && agenticData.trainings.length > 0) {
+                console.log(`✅ Loading ${agenticData.trainings.length} trainings from LangGraph`);
+
+                // Separate into events and courses based on mode
+                const eventsList = agenticData.trainings.filter(t => t.mode === 'OFFLINE');
+                const coursesList = agenticData.trainings.filter(t => t.mode === 'ONLINE' || t.mode === 'HYBRID');
+
+                setEvents(eventsList);
+                setCourses(coursesList);
+            }
+
+            setLoading(false);
+
+            // Show skill gap popup if UI config indicates
+            if (agenticData.ui?.show_skill_gap_popup) {
+                console.log('⚠️ Skill gap detected, showing popup');
+                setTimeout(() => {
+                    setShowSkillGapPopup(true);
+                }, 1500); // Show popup after 1.5 seconds
+            }
+
+            // Update user skills if provided by LangGraph
+            if (agenticData.user_skills && agenticData.user_skills.length > 0 && setUserSkills) {
+                const skillsObj = {};
+                agenticData.user_skills.forEach(skill => {
+                    skillsObj[skill] = 70; // Default proficiency
+                });
+                setUserSkills(skillsObj);
+                console.log(`✅ Updated user skills:`, skillsObj);
+            }
         }
-    }, [agentData]);
+    }, [fromAgentic, agenticData, setUserSkills]);
 
     // Get user's current location on mount
     useEffect(() => {
@@ -57,13 +104,8 @@ export default function MapView() {
     // Fetch data when location or tab changes, or when search query changes
     useEffect(() => {
         if (!locationLoading) {
-            if (fromAgent && activeTab === 'jobs') {
-                // Use generated mock jobs for agent flow
-                const skillsToUse = agentData?.skills || userSkills;
-                const mockJobs = generateMockJobs(skillsToUse, 5);
-                setJobs(mockJobs);
-                setLoading(false);
-            } else {
+            if (!fromAgentic) {
+                // Only fetch if not from agentic workflow
                 fetchData();
             }
         }
@@ -86,8 +128,7 @@ export default function MapView() {
                 // Reverse geocode to get city name using free Nominatim API
                 try {
                     const response = await axios.get(
-                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`,
-                        { headers: { 'User-Agent': 'SkillMatch Demo App' } }
+                        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`
                     );
                     
                     const address = response.data.address;
@@ -107,7 +148,7 @@ export default function MapView() {
                 console.log('Geolocation error:', error.message, '- using default location');
                 setLocationLoading(false);
             },
-            { timeout: 10000, enableHighAccuracy: false }
+            { timeout: 3000, maximumAge: 300000, enableHighAccuracy: false }
         );
     };
 
@@ -288,9 +329,28 @@ export default function MapView() {
 
     return (
         <div className="flex flex-col h-screen bg-gray-50">
-            {/* Agent Success Banner */}
-            {showAgentBanner && (
-                <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-3 relative">
+            {/* Skill Gap Popup - from LangGraph UI config */}
+            {showSkillGapPopup && agenticData?.ui && (
+                <SkillGapPopup
+                    skillGaps={agenticData.jobs?.[0]?.missing_skills || []}
+                    matchPercentage={Math.round(agenticData.average_match_score || agenticData.jobs?.[0]?.match_score || 50)}
+                    suggestedSteps={agenticData.ui.suggested_next_steps || []}
+                    onClose={() => setShowSkillGapPopup(false)}
+                    onViewTraining={() => {
+                        setActiveTab('seminars');
+                        setSeminarFilter('online');
+                        setShowSkillGapPopup(false);
+                    }}
+                />
+            )}
+
+            {/* Agent Success Banner from LangGraph */}
+            {showAgentBanner && agenticData && (
+                <div className={`text-white px-4 py-3 relative ${
+                    agenticData.intent === 'JOB_SEARCH'
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600'
+                        : 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                }`}>
                     <div className="max-w-4xl mx-auto flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -299,8 +359,20 @@ export default function MapView() {
                                 </svg>
                             </div>
                             <div>
-                                <p className="font-medium text-sm">AI found {jobs.length} matching opportunities!</p>
-                                <p className="text-xs text-white/80">Click a job to apply with AI-generated cover letter</p>
+                                <p className="font-medium text-sm">
+                                    {agenticData.intent === 'JOB_SEARCH'
+                                        ? `AI found ${jobs.length} matching opportunities for "${agenticData.query}"!`
+                                        : `Found ${events.length + courses.length} training programs for "${agenticData.query}"!`
+                                    }
+                                </p>
+                                <p className="text-xs text-white/80">
+                                    {agenticData.ui?.show_skill_gap_popup
+                                        ? 'We detected some skill gaps - check the recommendations'
+                                        : agenticData.intent === 'JOB_SEARCH'
+                                            ? 'Sorted by match score - top matches first'
+                                            : 'Select a program to enhance your skills'
+                                    }
+                                </p>
                             </div>
                         </div>
                         <button 
@@ -404,7 +476,7 @@ export default function MapView() {
                                 {getTabTitle()}
                             </h2>
                             <p className="text-sm text-gray-500 mt-1">
-                                {fromAgent && activeTab === 'jobs' ? 'AI-matched results' : 
+                                {fromAgentic && activeTab === 'jobs' ? 'AI-matched results' : 
                                  activeTab === 'seminars' && seminarFilter === 'online' ? 'Recommended for your skill gaps' :
                                  activeTab === 'seminars' && seminarFilter === 'in-person' ? 'Nearby seminars and events' : 
                                  'Sorted by skill match'} - {sortedItems.length} results
