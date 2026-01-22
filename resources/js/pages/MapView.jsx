@@ -272,7 +272,7 @@ export default function MapView() {
     if (skillsLoading || locationLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 mb-4" style={{ borderColor: '#114124' }}></div>
                 <p className="text-gray-600">
                     {locationLoading ? 'Detecting your location...' : 'Loading your skills...'}
                 </p>
@@ -315,11 +315,9 @@ export default function MapView() {
                     <div className="flex items-center justify-between mb-3">
                         <div>
                             <Link to="/" className="hover:opacity-80 transition-opacity">
-                                <h1 className="text-xl lg:text-2xl font-bold text-blue-600">
-                                    SkillMatch
-                                </h1>
+                                <img src="/lookal_logo.png" alt="Lookal" className="h-12 lg:h-16" />
                             </Link>
-                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                            <p className="text-xs flex items-center gap-1" style={{ color: '#181818', opacity: 0.7 }}>
                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                                 </svg>
@@ -426,7 +424,7 @@ export default function MapView() {
                         
                         {loading ? (
                             <div className="flex justify-center py-8">
-                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: '#114124' }}></div>
                             </div>
                         ) : sortedItems.length === 0 ? (
                             <p className="text-gray-500 text-center py-8">

@@ -30,7 +30,10 @@ export default function ApplyPage() {
                     <p className="text-gray-600 mb-4">Please select a job from the map to apply.</p>
                     <Link 
                         to="/map"
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        className="inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-colors"
+                        style={{ backgroundColor: '#114124' }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -83,12 +86,12 @@ ${userName || '[Your Name]'}`;
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <div className="min-h-screen bg-white">
             {/* Header */}
             <header className="bg-white shadow-sm border-b border-gray-200">
                 <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
                     <Link to="/" className="flex items-center gap-2">
-                        <h1 className="text-xl font-bold text-blue-600">SkillMatch</h1>
+                        <img src="/lookal_logo.png" alt="Lookal" className="h-8" />
                     </Link>
                     <button
                         onClick={handleBackToJobs}
@@ -106,7 +109,7 @@ ${userName || '[Your Name]'}`;
                 {step === 'compose' && (
                     <>
                         {/* Job Header Card */}
-                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-6 text-white mb-6 shadow-lg">
+                        <div className="rounded-2xl p-6 text-white mb-6 shadow-lg" style={{ background: 'linear-gradient(to right, #114124, #0d3118)' }}>
                             <div className="flex items-start gap-4">
                                 <div className="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
                                     <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -142,8 +145,8 @@ ${userName || '[Your Name]'}`;
                         {/* Application Form */}
                         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
                             <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#e8f5e9' }}>
+                                    <svg className="w-5 h-5" style={{ color: '#114124' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                     </svg>
                                 </div>
@@ -165,7 +168,10 @@ ${userName || '[Your Name]'}`;
                                             value={userName}
                                             onChange={(e) => setUserName(e.target.value)}
                                             placeholder="Juan Dela Cruz"
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-xl outline-none transition-all"
+                                            style={{ '&:focus': { borderColor: '#114124', ring: '2px solid #114124' } }}
+                                            onFocus={(e) => { e.target.style.borderColor = '#114124'; e.target.style.boxShadow = '0 0 0 2px rgba(17,65,36,0.2)'; }}
+                                            onBlur={(e) => { e.target.style.borderColor = '#d1d5db'; e.target.style.boxShadow = 'none'; }}
                                         />
                                     </div>
                                     <div>
@@ -177,7 +183,9 @@ ${userName || '[Your Name]'}`;
                                             value={userEmail}
                                             onChange={(e) => setUserEmail(e.target.value)}
                                             placeholder="juan@example.com"
-                                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-xl outline-none transition-all"
+                                            onFocus={(e) => { e.target.style.borderColor = '#114124'; e.target.style.boxShadow = '0 0 0 2px rgba(17,65,36,0.2)'; }}
+                                            onBlur={(e) => { e.target.style.borderColor = '#d1d5db'; e.target.style.boxShadow = 'none'; }}
                                         />
                                     </div>
                                 </div>
@@ -188,7 +196,7 @@ ${userName || '[Your Name]'}`;
                                         <label className="block text-sm font-medium text-gray-700">
                                             AI-Generated Cover Letter
                                         </label>
-                                        <span className="text-xs text-blue-600 flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-full">
+                                        <span className="text-xs flex items-center gap-1 px-2 py-1 rounded-full" style={{ color: '#114124', backgroundColor: '#e8f5e9' }}>
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                             </svg>
@@ -211,7 +219,9 @@ ${userName || '[Your Name]'}`;
                                         value={customMessage}
                                         onChange={(e) => setCustomMessage(e.target.value)}
                                         placeholder="Add any additional information you'd like to include..."
-                                        className="w-full h-24 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none transition-all"
+                                        className="w-full h-24 px-4 py-3 border border-gray-300 rounded-xl outline-none resize-none transition-all"
+                                        onFocus={(e) => { e.target.style.borderColor = '#114124'; e.target.style.boxShadow = '0 0 0 2px rgba(17,65,36,0.2)'; }}
+                                        onBlur={(e) => { e.target.style.borderColor = '#d1d5db'; e.target.style.boxShadow = 'none'; }}
                                     />
                                 </div>
 
@@ -242,12 +252,14 @@ ${userName || '[Your Name]'}`;
                                     <button
                                         onClick={handleSend}
                                         disabled={!userEmail || !userName}
-                                        className={`
-                                            px-8 py-3 rounded-xl font-medium transition-all flex items-center gap-2 shadow-lg
-                                            ${userEmail && userName 
-                                                ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-xl' 
-                                                : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'}
-                                        `}
+                                        className="px-8 py-3 rounded-xl font-medium transition-all flex items-center gap-2 shadow-lg"
+                                        style={{ 
+                                            backgroundColor: userEmail && userName ? '#114124' : '#e5e7eb',
+                                            color: userEmail && userName ? 'white' : '#9ca3af',
+                                            cursor: userEmail && userName ? 'pointer' : 'not-allowed'
+                                        }}
+                                        onMouseEnter={(e) => { if (userEmail && userName) e.target.style.backgroundColor = '#0d3118'; }}
+                                        onMouseLeave={(e) => { if (userEmail && userName) e.target.style.backgroundColor = '#114124'; }}
                                     >
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

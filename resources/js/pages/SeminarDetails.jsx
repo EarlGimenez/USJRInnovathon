@@ -39,8 +39,8 @@ export default function SeminarDetails() {
         try {
             const response = await axios.post(`/api/seminars/${id}/verify`, {
                 qrCode,
-                sessionId: localStorage.getItem('skillmatch_session') 
-                    ? JSON.parse(localStorage.getItem('skillmatch_session')).sessionId 
+                sessionId: localStorage.getItem('lookal_session') 
+                    ? JSON.parse(localStorage.getItem('lookal_session')).sessionId 
                     : null
             });
             
@@ -66,7 +66,7 @@ export default function SeminarDetails() {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: '#114124' }}></div>
             </div>
         );
     }
@@ -77,7 +77,8 @@ export default function SeminarDetails() {
                 <p className="text-gray-500 mb-4">Seminar not found</p>
                 <button 
                     onClick={() => navigate('/')}
-                    className="text-blue-500 hover:underline"
+                    style={{ color: '#114124' }}
+                    className="hover:underline"
                 >
                     Back to Map
                 </button>
@@ -110,7 +111,7 @@ export default function SeminarDetails() {
                     <p className="text-gray-600">{seminar.organizer}</p>
                     
                     <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm" style={{ backgroundColor: '#e8f5e9', color: '#114124' }}>
                             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
@@ -172,8 +173,8 @@ export default function SeminarDetails() {
                         </div>
                         <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                             <div 
-                                className="h-full bg-blue-500 rounded-full transition-all"
-                                style={{ width: `${(seminar.attendees / seminar.maxAttendees) * 100}%` }}
+                                className="h-full rounded-full transition-all"
+                                style={{ width: `${(seminar.attendees / seminar.maxAttendees) * 100}%`, backgroundColor: '#114124' }}
                             />
                         </div>
                     </div>
@@ -208,7 +209,10 @@ export default function SeminarDetails() {
                     <div className="flex gap-3">
                         <button
                             onClick={() => setShowQRScanner(true)}
-                            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center"
+                            className="flex-1 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center"
+                            style={{ backgroundColor: '#114124' }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
                         >
                             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
