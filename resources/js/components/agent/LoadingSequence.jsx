@@ -48,45 +48,122 @@ export default function LoadingSequence({ agenticData, onComplete }) {
     const searchType = agenticData?.intent === 'SKILL_IMPROVEMENT' ? 'seminar' : 'job';
     const resultLabel = searchType === 'job' ? 'opportunities' : 'training programs';
 
+    // Only allow the sequence to complete/navigate once the search is actually done.
+    // LandingPage sets intent to JOB_SEARCH / SKILL_IMPROVEMENT only after results exist.
+    const searchComplete = agenticData?.intent === 'JOB_SEARCH' || agenticData?.intent === 'SKILL_IMPROVEMENT';
+    const lastStepIndex = LOADING_STEPS.length - 1;
+
     useEffect(() => {
-        if (currentStep < LOADING_STEPS.length) {
+        // Run through steps 0..lastStepIndex-1 normally.
+        if (currentStep < lastStepIndex) {
             const timer = setTimeout(() => {
-                setCompletedSteps(prev => [...prev, LOADING_STEPS[currentStep].id]);
-                setCurrentStep(prev => prev + 1);
+                setCompletedSteps((prev) => [...prev, LOADING_STEPS[currentStep].id]);
+                setCurrentStep((prev) => prev + 1);
             }, LOADING_STEPS[currentStep].duration);
 
             return () => clearTimeout(timer);
-        } else {
-            // All steps completed, show results
-            setTimeout(() => {
-                setShowResults(true);
-                // Animate item count based on actual results from LangGraph
-                let count = 0;
-                const jobCount = agenticData?.jobs?.length || 0;
-                const trainingCount = agenticData?.trainings?.length || 0;
-                const targetCount = searchType === 'job' ? jobCount : trainingCount;
-
-                const interval = setInterval(() => {
-                    count++;
-                    setItemCount(count);
-                    if (count >= targetCount) {
-                        clearInterval(interval);
-                        // Wait a bit then navigate
-                        setTimeout(() => {
-                            onComplete();
-                        }, 2000);
-                    }
-                }, 200);
-            }, 500);
         }
-    }, [currentStep, onComplete, agenticData, searchType]);
+
+        // Pause on the last step until the search is complete.
+        if (currentStep === lastStepIndex) {
+            if (!searchComplete) {
+                return;
+            }
+
+            // Mark final step complete, then move to results screen.
+            const timer = setTimeout(() => {
+                setCompletedSteps((prev) => {
+                    const next = [...prev, LOADING_STEPS[currentStep].id];
+                    return Array.from(new Set(next));
+                });
+                setCurrentStep((prev) => prev + 1);
+            }, LOADING_STEPS[currentStep].duration);
+
+            return () => clearTimeout(timer);
+        }
+
+        // currentStep > lastStepIndex => results phase
+        return;
+    }, [currentStep, lastStepIndex, searchComplete]);
+
+    // Switch to the results view only after the last step has finished AND the search is complete.
+    useEffect(() => {
+        if (currentStep <= lastStepIndex) {
+            return;
+        }
+
+        if (!searchComplete) {
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setShowResults(true);
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [currentStep, lastStepIndex, searchComplete]);
+
+    // Animate item count and navigate only once search is complete.
+    useEffect(() => {
+        if (!showResults) {
+            return;
+        }
+
+        if (!searchComplete) {
+            return;
+        }
+
+        let doneTimer = null;
+        let interval = null;
+
+        const jobCount = Array.isArray(agenticData?.jobs) ? agenticData.jobs.length : 0;
+        const trainingCount = Array.isArray(agenticData?.trainings) ? agenticData.trainings.length : 0;
+        const targetCount = searchType === 'job' ? jobCount : trainingCount;
+
+        // If no results, still proceed (but only after search is done).
+        if (targetCount <= 0) {
+            setItemCount(0);
+            doneTimer = setTimeout(() => {
+                onComplete && onComplete();
+            }, 1200);
+
+            return () => {
+                if (doneTimer) {
+                    clearTimeout(doneTimer);
+                }
+            };
+        }
+
+        setItemCount(0);
+        let count = 0;
+
+        interval = setInterval(() => {
+            count++;
+            setItemCount(count);
+            if (count >= targetCount) {
+                clearInterval(interval);
+                doneTimer = setTimeout(() => {
+                    onComplete && onComplete();
+                }, 1200);
+            }
+        }, 120);
+
+        return () => {
+            if (interval) {
+                clearInterval(interval);
+            }
+            if (doneTimer) {
+                clearTimeout(doneTimer);
+            }
+        };
+    }, [showResults, searchComplete, agenticData, searchType, onComplete]);
 
     // Extract query and user skills for display from agentic data
     const displayQuery = agenticData?.query || '';
     const topSkills = agenticData?.user_skills?.slice(0, 3) || [];
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col items-center justify-center px-4">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex flex-col items-center justify-center px-4 py-10 relative">
             <div className="w-full max-w-lg">
                 {/* Header */}
                 <div className="text-center mb-8">
@@ -166,6 +243,12 @@ export default function LoadingSequence({ agenticData, onComplete }) {
                                 </div>
                             );
                         })}
+                    </div>
+                )}
+
+                {!showResults && currentStep === lastStepIndex && !searchComplete && (
+                    <div className="text-center text-sm text-gray-500 mb-6">
+                        Still fetching results…
                     </div>
                 )}
 
