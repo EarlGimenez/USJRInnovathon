@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\SeminarController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\AgentMatchController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,3 +37,6 @@ Route::get('/events/skill/{skill}', [EventController::class, 'bySkill']);
 Route::get('/courses', [CourseController::class, 'index']);
 Route::get('/courses/recommended', [CourseController::class, 'recommended']);
 Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
+
+// Agent triggers
+Route::post('/agent/match-score', [AgentMatchController::class, 'score']);
