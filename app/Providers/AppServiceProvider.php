@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use App\Services\AdzunaService;
+use App\Services\CareerJetService;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -12,8 +12,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(AdzunaService::class, function ($app) {
-            return new AdzunaService();
+        $this->app->singleton(CareerJetService::class, function ($app) {
+            return new CareerJetService();
         });
     }
 

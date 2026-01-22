@@ -155,7 +155,7 @@ class SeminarController extends Controller
     }
 
     /**
-     * Mock seminar data
+     * Mock seminar data - Taguig/BGC locations
      */
     protected function getMockSeminars(): array
     {
@@ -163,11 +163,11 @@ class SeminarController extends Controller
             [
                 'id' => 1,
                 'title' => 'Tech Workshop: Modern Web Development',
-                'organizer' => 'Cebu IT Association',
-                'location' => 'NS Design Center, IT Park',
-                'latitude' => 10.3301,
-                'longitude' => 123.9056,
-                'date' => 'May 25th, 2026',
+                'organizer' => 'Google Developer Groups Philippines',
+                'location' => 'Mind Museum, BGC',
+                'latitude' => 14.5518,
+                'longitude' => 121.0465,
+                'date' => 'February 15, 2026',
                 'time' => '9:00 AM - 5:00 PM',
                 'description' => 'A comprehensive hands-on workshop covering the latest web technologies including React, Node.js, and cloud services. Perfect for developers looking to upgrade their skills. Includes certificate of completion.',
                 'skillBoosts' => ['Tools' => 15, 'Prototyping' => 10],
@@ -177,14 +177,14 @@ class SeminarController extends Controller
             ],
             [
                 'id' => 2,
-                'title' => 'Career Fair 2026',
-                'organizer' => 'JobMatch PH',
-                'location' => 'Waterfront Hotel, Lahug',
-                'latitude' => 10.3256,
-                'longitude' => 123.8892,
-                'date' => 'January 17, 2026',
+                'title' => 'Career Fair BGC 2026',
+                'organizer' => 'JobStreet Philippines',
+                'location' => 'SMX Convention Center, SM Aura',
+                'latitude' => 14.5449,
+                'longitude' => 121.0546,
+                'date' => 'January 25, 2026',
                 'time' => '10:00 AM - 6:00 PM',
-                'description' => 'Connect with top employers in Cebu and learn about job opportunities in the tech industry. Network with professionals, attend mini workshops, and get your resume reviewed by HR experts.',
+                'description' => 'Connect with top employers in Metro Manila and learn about job opportunities in tech, finance, and BPO. Network with professionals, attend mini workshops, and get your resume reviewed by HR experts.',
                 'skillBoosts' => ['Communication' => 10, 'Research' => 8],
                 'attendees' => 230,
                 'maxAttendees' => 500,
@@ -193,11 +193,11 @@ class SeminarController extends Controller
             [
                 'id' => 3,
                 'title' => 'Design Thinking Workshop',
-                'organizer' => 'UX Philippines',
-                'location' => 'Ayala Center Cebu',
-                'latitude' => 10.3181,
-                'longitude' => 123.9050,
-                'date' => 'February 5, 2026',
+                'organizer' => 'UXPH (UX Philippines)',
+                'location' => 'WeWork, High Street South',
+                'latitude' => 14.5503,
+                'longitude' => 121.0451,
+                'date' => 'February 8, 2026',
                 'time' => '1:00 PM - 5:00 PM',
                 'description' => 'Learn design thinking methodologies used by top companies. This hands-on workshop will teach you how to solve complex problems through empathy, ideation, and prototyping.',
                 'skillBoosts' => ['Design' => 12, 'Research' => 10, 'Prototyping' => 8],
@@ -208,11 +208,11 @@ class SeminarController extends Controller
             [
                 'id' => 4,
                 'title' => 'Professional Communication Masterclass',
-                'organizer' => 'Professional Skills Hub',
-                'location' => 'SM Seaside City Cebu',
-                'latitude' => 10.2817,
-                'longitude' => 123.8793,
-                'date' => 'February 20, 2026',
+                'organizer' => 'Toastmasters BGC',
+                'location' => 'Shangri-La at The Fort, BGC',
+                'latitude' => 14.5535,
+                'longitude' => 121.0489,
+                'date' => 'February 22, 2026',
                 'time' => '2:00 PM - 6:00 PM',
                 'description' => 'Enhance your professional communication skills for the workplace. Learn effective presentation techniques, email etiquette, and how to communicate with confidence in any situation.',
                 'skillBoosts' => ['Communication' => 15],
@@ -223,32 +223,17 @@ class SeminarController extends Controller
             [
                 'id' => 5,
                 'title' => 'Figma & Prototyping Bootcamp',
-                'organizer' => 'Design Cebu',
-                'location' => 'IT Park, Cebu City',
-                'latitude' => 10.3301,
-                'longitude' => 123.9056,
-                'date' => 'March 8, 2026',
+                'organizer' => 'Canva Philippines',
+                'location' => 'Globe Tower, BGC',
+                'latitude' => 14.5547,
+                'longitude' => 121.0462,
+                'date' => 'March 10, 2026',
                 'time' => '9:00 AM - 4:00 PM',
                 'description' => 'Intensive one-day bootcamp on Figma and prototyping. Learn to create interactive prototypes, design systems, and collaborate effectively with developers.',
                 'skillBoosts' => ['Prototyping' => 18, 'Tools' => 12, 'Design' => 8],
                 'attendees' => 15,
                 'maxAttendees' => 30,
                 'qr_code' => 'SEMINAR_5_VERIFY'
-            ],
-            [
-                'id' => 6,
-                'title' => 'User Research Methods',
-                'organizer' => 'Research PH',
-                'location' => 'Cebu Business Park',
-                'latitude' => 10.3183,
-                'longitude' => 123.8999,
-                'date' => 'March 15, 2026',
-                'time' => '10:00 AM - 3:00 PM',
-                'description' => 'Learn essential user research methods including interviews, surveys, usability testing, and data analysis. Perfect for UX designers and product managers.',
-                'skillBoosts' => ['Research' => 20, 'Communication' => 5],
-                'attendees' => 22,
-                'maxAttendees' => 40,
-                'qr_code' => 'SEMINAR_6_VERIFY'
             ]
         ];
     }

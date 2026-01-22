@@ -118,12 +118,23 @@ export function SkillProvider({ children }) {
         initializeSession();
     };
 
+    // Allow setting skills directly (e.g., from AI agent)
+    const updateAllSkills = (newSkills) => {
+        setUserSkills(newSkills);
+        
+        // Update localStorage
+        const stored = JSON.parse(localStorage.getItem('skillmatch_session') || '{}');
+        stored.skills = newSkills;
+        localStorage.setItem('skillmatch_session', JSON.stringify(stored));
+    };
+
     return (
         <SkillContext.Provider value={{
             userSkills,
             sessionId,
             loading,
             updateSkill,
+            setUserSkills: updateAllSkills,
             calculateMatchPercentage,
             resetSession,
             SKILL_CATEGORIES
