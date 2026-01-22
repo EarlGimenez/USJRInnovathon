@@ -7,9 +7,106 @@ use App\Services\JobPostingRankingService;
 use App\Services\JobSkillExtractionService;
 use App\Services\SkillAlignmentService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class JobController extends Controller
 {
+
+    private function excerpt(string $value, int $limit = 2000): string
+    {
+        if ($limit <= 0) {
+            return '';
+        }
+
+        if (strlen($value) <= $limit) {
+            return $value;
+        }
+
+        return substr($value, 0, $limit) . "... (truncated)";
+    }
+
+    private function haversineDistanceKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $earthRadiusKm = 6371.0;
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) * sin($dLat / 2)
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2))
+            * sin($dLng / 2) * sin($dLng / 2);
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadiusKm * $c;
+    }
+
+    /**
+     * Assign approximate coordinates to each job around the center.
+     * This enables distance filtering in the demo even if the upstream source is city-based text.
+     */
+    private function assignCoordinatesToJobs(array $jobs, float $centerLat, float $centerLng, float $spreadKm = 25.0): array
+    {
+        // Rough conversions (valid enough for small-area demo around PH)
+        $degLatPerKm = 1.0 / 110.574;
+        $degLngPerKm = 1.0 / max(1e-6, (111.320 * cos(deg2rad($centerLat))));
+
+        $spreadKm = max(0.1, (float) $spreadKm);
+
+        foreach ($jobs as $i => $job) {
+            if (!is_array($job)) {
+                continue;
+            }
+
+            if (isset($job['latitude'], $job['longitude']) && is_numeric($job['latitude']) && is_numeric($job['longitude'])) {
+                $jobs[$i]['latitude'] = (float) $job['latitude'];
+                $jobs[$i]['longitude'] = (float) $job['longitude'];
+                continue;
+            }
+
+            // Random point within a circle around the center (keeps points within the intended area)
+            $u = mt_rand(0, 1000000) / 1000000;
+            $v = mt_rand(0, 1000000) / 1000000;
+            $rKm = sqrt($u) * $spreadKm; // uniform by area
+            $theta = 2 * M_PI * $v;
+
+            $latOffsetKm = $rKm * cos($theta);
+            $lngOffsetKm = $rKm * sin($theta);
+
+            $jobs[$i]['latitude'] = $centerLat + ($latOffsetKm * $degLatPerKm);
+            $jobs[$i]['longitude'] = $centerLng + ($lngOffsetKm * $degLngPerKm);
+        }
+
+        return $jobs;
+    }
+
+    private function filterJobsByDistance(array $jobs, float $centerLat, float $centerLng, float $radiusKm): array
+    {
+        if ($radiusKm <= 0) {
+            return $jobs;
+        }
+
+        $filtered = [];
+        foreach ($jobs as $job) {
+            if (!is_array($job)) {
+                continue;
+            }
+
+            $jobLat = $job['latitude'] ?? null;
+            $jobLng = $job['longitude'] ?? null;
+            if (!is_numeric($jobLat) || !is_numeric($jobLng)) {
+                continue;
+            }
+
+            $distanceKm = $this->haversineDistanceKm($centerLat, $centerLng, (float) $jobLat, (float) $jobLng);
+            if ($distanceKm <= $radiusKm) {
+                $job['_distance_km'] = $distanceKm;
+                $filtered[] = $job;
+            }
+        }
+
+        return $filtered;
+    }
 
     /**
      * List jobs
@@ -25,18 +122,29 @@ class JobController extends Controller
 
         $similarityThreshold = (float) ($request->input('similarity_threshold') ?? 0.75);
 
+        $radiusKmInput = $request->input('radius_km');
+        $radiusKm = is_numeric($radiusKmInput) ? (float) $radiusKmInput : 15.0;
+        if ($radiusKm <= 0) {
+            $radiusKm = 15.0;
+        }
+
+        $jobsSource = 'unknown';
+
         // Get real jobs from Python script
-        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng, $candidateSkills, $similarityThreshold);
+        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng, $candidateSkills, $similarityThreshold, $radiusKm, $jobsSource);
 
         // Don't limit results - return all jobs from the scraper
         // $jobs = array_slice($jobs, 0, $this->maxResults);
 
-        return response()->json([
+        return response()
+            ->json([
             'jobs' => $jobs,
-            'source' => 'python_scraper',
+            'source' => $jobsSource,
             'city' => $city,
-            'query' => $query
-        ]);
+            'query' => $query,
+            'radius_km' => $radiusKm,
+        ])
+            ->header('X-Jobs-Source', $jobsSource);
     }
 
     /**
@@ -54,8 +162,16 @@ class JobController extends Controller
 
         $similarityThreshold = (float) ($request->input('similarity_threshold') ?? 0.75);
 
+        $radiusKmInput = $request->input('radius_km');
+        $radiusKm = is_numeric($radiusKmInput) ? (float) $radiusKmInput : 15.0;
+        if ($radiusKm <= 0) {
+            $radiusKm = 15.0;
+        }
+
+        $jobsSource = 'unknown';
+
         // Get jobs from Python script with current search context
-        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng, $candidateSkills, $similarityThreshold);
+        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng, $candidateSkills, $similarityThreshold, $radiusKm, $jobsSource);
 
         // Find job by ID (use index as ID since Python script doesn't provide IDs)
         $jobIndex = (int)$id - 1; // Convert to 0-based index
@@ -66,9 +182,13 @@ class JobController extends Controller
             $job = $jobs[0] ?? null;
         }
 
-        return response()->json([
-            'job' => $job
-        ]);
+        return response()
+            ->json([
+                'job' => $job,
+                'source' => $jobsSource,
+                'radius_km' => $radiusKm,
+            ])
+            ->header('X-Jobs-Source', $jobsSource);
     }
 
     /**
@@ -80,10 +200,13 @@ class JobController extends Controller
         float $lat,
         float $lng,
         ?array $candidateSkills = null,
-        float $similarityThreshold = 0.75
+        float $similarityThreshold = 0.75,
+        float $radiusKm = 15.0,
+        ?string &$jobsSource = null
     ): array
     {
         try {
+            $jobsSource = 'python_scraper';
             // Keep automated tests fast and deterministic.
             // if (app()->environment('testing')) {
             //     return $this->getMockJobs($location, $lat, $lng);
@@ -92,9 +215,73 @@ class JobController extends Controller
             // Path to Python script
             $scriptPath = base_path('python_scripts/job_listing_scraper.py');
 
-            // Execute Python script with arguments
-            $command = "cd " . escapeshellarg(base_path()) . " && uv run python_scripts/job_listing_scraper.py " . escapeshellarg($jobTitle) . " " . escapeshellarg($location) . " 2>&1";
-            $output = shell_exec($command);
+            Log::info('JobController.getJobsFromPythonScript: start', [
+                'jobTitle' => $jobTitle,
+                'location' => $location,
+                'lat' => $lat,
+                'lng' => $lng,
+                'radiusKm' => $radiusKm,
+                'scriptPath' => $scriptPath,
+                'scriptExists' => file_exists($scriptPath),
+                'candidateSkillsCount' => is_array($candidateSkills) ? count($candidateSkills) : 0,
+                'similarityThreshold' => $similarityThreshold,
+            ]);
+
+            // Execute Python script with arguments. Try multiple launchers so Windows PATH issues
+            // (e.g., uv not available under PHP) don't force a mock fallback.
+            $baseDir = base_path();
+            $escapedBaseDir = escapeshellarg($baseDir);
+            $escapedJobTitle = escapeshellarg($jobTitle);
+            $escapedLocation = escapeshellarg($location);
+
+            $commands = [
+                "cd {$escapedBaseDir} && uv run python_scripts/job_listing_scraper.py {$escapedJobTitle} {$escapedLocation} 2>&1",
+                "cd {$escapedBaseDir} && python python_scripts/job_listing_scraper.py {$escapedJobTitle} {$escapedLocation} 2>&1",
+                "cd {$escapedBaseDir} && py -3 python_scripts/job_listing_scraper.py {$escapedJobTitle} {$escapedLocation} 2>&1",
+            ];
+
+            $output = null;
+            $lastOutput = null;
+            $usedCommand = null;
+
+            foreach ($commands as $command) {
+                Log::info('JobController.getJobsFromPythonScript: executing scraper', [
+                    'command' => $command,
+                ]);
+
+                $candidateOutput = shell_exec($command);
+                $lastOutput = $candidateOutput;
+
+                if (is_string($candidateOutput) && strpos($candidateOutput, '[') !== false) {
+                    $output = $candidateOutput;
+                    $usedCommand = $command;
+                    break;
+                }
+
+                Log::warning('JobController.getJobsFromPythonScript: scraper attempt did not produce JSON output', [
+                    'command' => $command,
+                    'outputType' => gettype($candidateOutput),
+                    'outputHead' => is_string($candidateOutput) ? $this->excerpt($candidateOutput, 800) : null,
+                ]);
+            }
+
+            if (!is_string($output) || trim($output) === '') {
+                $jobsSource = 'mock';
+                Log::warning('JobController.getJobsFromPythonScript: all scraper attempts failed to produce output; falling back to mock jobs', [
+                    'scriptPath' => $scriptPath,
+                    'scriptExists' => file_exists($scriptPath),
+                    'lastOutputType' => gettype($lastOutput),
+                    'lastOutputHead' => is_string($lastOutput) ? $this->excerpt($lastOutput, 1200) : null,
+                ]);
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            Log::info('JobController.getJobsFromPythonScript: scraper returned output', [
+                'usedCommand' => $usedCommand,
+                'outputLength' => strlen($output),
+                'outputHead' => $this->excerpt($output, 800),
+                'outputTail' => $this->excerpt(substr($output, max(0, strlen($output) - 800)), 800),
+            ]);
 
             // if (!$output) {
             //     // Fallback to mock data if script fails
@@ -103,6 +290,14 @@ class JobController extends Controller
 
             // Parse JSON output
             $jsonStart = strpos($output, '[');
+
+            if ($jsonStart === false) {
+                $jobsSource = 'mock';
+                Log::warning('JobController.getJobsFromPythonScript: no JSON array start found in scraper output; falling back to mock jobs', [
+                    'outputHead' => $this->excerpt($output, 1200),
+                ]);
+                return $this->getMockJobs($location, $lat, $lng);
+            }
             // if ($jsonStart === false) {
             //     // Fallback to mock data if no JSON found
             //     return $this->getMockJobs($location, $lat, $lng);
@@ -110,6 +305,39 @@ class JobController extends Controller
 
             $jsonOutput = substr($output, $jsonStart);
             $pythonJobs = json_decode($jsonOutput, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $jobsSource = 'mock';
+                Log::warning('JobController.getJobsFromPythonScript: JSON decode failed; falling back to mock jobs', [
+                    'jsonError' => json_last_error_msg(),
+                    'jsonHead' => $this->excerpt($jsonOutput, 1200),
+                ]);
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            if (!is_array($pythonJobs)) {
+                $jobsSource = 'mock';
+                Log::warning('JobController.getJobsFromPythonScript: decoded JSON is not an array; falling back to mock jobs', [
+                    'decodedType' => gettype($pythonJobs),
+                ]);
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            Log::info('JobController.getJobsFromPythonScript: decoded jobs', [
+                'count' => count($pythonJobs),
+            ]);
+
+            // 1) Assign coordinates (demo approximation) then
+            // 2) Filter by distance BEFORE any LLM-heavy requiredSkills extraction
+            $pythonJobs = $this->assignCoordinatesToJobs($pythonJobs, $lat, $lng, max(1.0, $radiusKm));
+            $beforeDistanceCount = count($pythonJobs);
+            $pythonJobs = $this->filterJobsByDistance($pythonJobs, $lat, $lng, $radiusKm);
+
+            Log::info('JobController.getJobsFromPythonScript: distance filter applied', [
+                'radiusKm' => $radiusKm,
+                'before' => $beforeDistanceCount,
+                'after' => count($pythonJobs),
+            ]);
 
             // if (!$pythonJobs || !is_array($pythonJobs)) {
             //     // Fallback to mock data if JSON parsing fails
@@ -128,6 +356,11 @@ class JobController extends Controller
             if (is_array($candidateSkills) && count($candidateSkills) > 0) {
                 $alignment = app(SkillAlignmentService::class);
                 $candidateSkills = $alignment->canonicalizeCandidateSkills($candidateSkills);
+
+                Log::info('JobController.getJobsFromPythonScript: ranking jobs using candidate skills', [
+                    'candidateSkillsCount' => count($candidateSkills),
+                    'similarityThreshold' => $similarityThreshold,
+                ]);
 
                 $ranking = app(JobPostingRankingService::class);
                 $ranked = $ranking->rank($candidateSkills, $pythonJobs, $similarityThreshold);
@@ -150,13 +383,31 @@ class JobController extends Controller
                 }
             }
 
+            Log::info('JobController.getJobsFromPythonScript: returning transformed jobs', [
+                'count' => count($pythonJobs),
+            ]);
+
             // Transform Python job data to frontend format
             return $this->transformPythonJobsToFrontendFormat($pythonJobs, $lat, $lng);
 
         } catch (\Exception $e) {
             // Fallback to mock data on any error
-            // return $this->getMockJobs($location, $lat, $lng);
-            return $e->getMessage();
+            $jobsSource = 'mock';
+            Log::error('JobController.getJobsFromPythonScript: exception; falling back to mock jobs', [
+                'jobTitle' => $jobTitle,
+                'location' => $location,
+                'lat' => $lat,
+                'lng' => $lng,
+                'radiusKm' => $radiusKm,
+                'candidateSkillsCount' => is_array($candidateSkills) ? count($candidateSkills) : 0,
+                'similarityThreshold' => $similarityThreshold,
+                'exceptionMessage' => $e->getMessage(),
+                'exceptionClass' => get_class($e),
+                'exceptionFile' => $e->getFile(),
+                'exceptionLine' => $e->getLine(),
+            ]);
+            return $this->getMockJobs($location, $lat, $lng);
+            // return $e->getMessage();
         }
     }
 
@@ -169,11 +420,17 @@ class JobController extends Controller
         $id = 1;
 
         foreach ($pythonJobs as $job) {
-            // Generate random coordinates around the center (within ~2km for better proximity)
-            $latOffset = (mt_rand(-200, 200) / 10000); // ~2km variation
-            $lngOffset = (mt_rand(-200, 200) / 10000);
-            $latitude = $centerLat + $latOffset;
-            $longitude = $centerLng + $lngOffset;
+            // Prefer pre-assigned coordinates from earlier pipeline; otherwise generate a small jitter.
+            if (isset($job['latitude'], $job['longitude']) && is_numeric($job['latitude']) && is_numeric($job['longitude'])) {
+                $latitude = (float) $job['latitude'];
+                $longitude = (float) $job['longitude'];
+            } else {
+                // ~2km variation
+                $latOffset = (mt_rand(-200, 200) / 10000);
+                $lngOffset = (mt_rand(-200, 200) / 10000);
+                $latitude = $centerLat + $latOffset;
+                $longitude = $centerLng + $lngOffset;
+            }
 
             // requiredSkills are extracted by an LLM and aligned to the `skills` table via cosine similarity.
             $requiredSkills = [];
@@ -216,6 +473,7 @@ class JobController extends Controller
                 'url' => $job['url'] ?? null,
                 'source' => $job['source'] ?? 'Unknown',
                 'match' => $job['_match'] ?? null,
+                'distance_km' => isset($job['_distance_km']) ? (float) $job['_distance_km'] : null,
             ];
 
             $id++;

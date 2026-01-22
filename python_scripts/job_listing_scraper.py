@@ -502,6 +502,18 @@ class JobScraper:
         # Adzuna with country code
         self.fetch_adzuna_jobs(query=job_title, location=location, country=country_code)
 
+        # If the location-aware sources produced no results (often due to missing API keys),
+        # fall back to free sources so the caller still receives real data.
+        if len(self.jobs) == 0:
+            print("No local jobs returned from keyed APIs; falling back to free sources...")
+            self.fetch_all_jobs(search_term=job_title)
+
+            # If we can filter by the requested location, prefer that subset.
+            if location:
+                filtered = self.filter_by_location(location)
+                if filtered:
+                    return filtered
+
         print(f"\n{'='*60}")
         print(f"Total local jobs found: {len(self.jobs)}")
         print(f"{'='*60}\n")
@@ -638,9 +650,8 @@ def main():
         country_code="ph"
     )
 
-    # Output JSON to stdout
-    if local_jobs:
-        print(json.dumps([asdict(job) for job in local_jobs], indent=2, ensure_ascii=True))
+    # Output JSON to stdout (always emit an array, even if empty)
+    print(json.dumps([asdict(job) for job in local_jobs], indent=2, ensure_ascii=True))
 
 
 if __name__ == "__main__":

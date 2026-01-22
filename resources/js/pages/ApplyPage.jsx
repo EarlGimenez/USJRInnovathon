@@ -10,6 +10,138 @@ export default function ApplyPage() {
     const job = location.state?.job;
     const agentSkills = location.state?.agentSkills;
     const skills = agentSkills || userSkills;
+
+    const mapRequiredSkillToCategory = (rawSkill) => {
+        const skill = String(rawSkill || '').toLowerCase();
+        if (!skill) return null;
+
+        if (
+            skill.includes('javascript') || skill.includes('typescript') || skill.includes('react') ||
+            skill.includes('node') || skill.includes('php') || skill.includes('laravel') ||
+            skill.includes('python') || skill.includes('java') || skill.includes('c#') ||
+            skill.includes('html') || skill.includes('css') || skill.includes('api')
+        ) return 'Programming';
+
+        if (
+            skill.includes('figma') || skill.includes('sketch') || skill.includes('adobe') ||
+            skill.includes('photoshop') || skill.includes('illustrator') || skill.includes('xd') ||
+            skill.includes('canva')
+        ) return 'Tools';
+
+        if (skill.includes('ui') || skill.includes('ux') || skill.includes('design') || skill.includes('wireframe')) {
+            return 'Design';
+        }
+
+        if (skill.includes('prototype') || skill.includes('prototyp')) return 'Prototyping';
+
+        if (
+            skill.includes('research') || skill.includes('user testing') || skill.includes('usability') ||
+            skill.includes('interview')
+        ) return 'Research';
+
+        if (
+            skill.includes('sql') || skill.includes('excel') || skill.includes('tableau') ||
+            skill.includes('power bi') || skill.includes('analytics') || skill.includes('data') ||
+            skill.includes('statistics')
+        ) return 'Data Analysis';
+
+        if (
+            skill.includes('communication') || skill.includes('collaboration') || skill.includes('teamwork') ||
+            skill.includes('stakeholder') || skill.includes('presentation') || skill.includes('writing')
+        ) return 'Communication';
+
+        if (
+            skill.includes('lead') || skill.includes('management') || skill.includes('mentor') ||
+            skill.includes('strategy')
+        ) return 'Leadership';
+
+        return null;
+    };
+
+    const buildCategoryRequirementsFromRequiredSkills = (requiredSkills) => {
+        if (!requiredSkills || typeof requiredSkills !== 'object') return null;
+
+        const requiredByCategory = {};
+        Object.keys(requiredSkills).forEach((skillName) => {
+            const category = mapRequiredSkillToCategory(skillName);
+            if (category) {
+                requiredByCategory[category] = 70;
+            }
+        });
+
+        return Object.keys(requiredByCategory).length > 0 ? requiredByCategory : null;
+    };
+
+    const computeMatchPercentage = (requiredSkills, candidateSkills) => {
+        if (!requiredSkills || typeof requiredSkills !== 'object') return null;
+
+        // Candidate is a category->level map (demo session)
+        if (candidateSkills && typeof candidateSkills === 'object' && !Array.isArray(candidateSkills)) {
+            const requiredByCategory = buildCategoryRequirementsFromRequiredSkills(requiredSkills);
+            const effectiveRequired = requiredByCategory || requiredSkills;
+
+            const entries = Object.entries(effectiveRequired);
+            if (entries.length === 0) return null;
+
+            let total = 0;
+            let count = 0;
+            for (const [skillName, required] of entries) {
+                const requiredLevel = typeof required === 'number' && !Number.isNaN(required) && required > 0 ? required : 70;
+                const userLevel = typeof candidateSkills[skillName] === 'number' ? candidateSkills[skillName] : 0;
+                const match = Math.min(100, (userLevel / requiredLevel) * 100);
+                total += match;
+                count += 1;
+            }
+
+            return count > 0 ? Math.round(total / count) : null;
+        }
+
+        // Candidate is an array of skill strings (agent flow)
+        if (Array.isArray(candidateSkills)) {
+            const normalizedCandidate = candidateSkills
+                .map((s) => (typeof s === 'string' ? s.trim().toLowerCase() : ''))
+                .filter(Boolean);
+
+            const requiredNames = Object.keys(requiredSkills)
+                .map((s) => String(s).trim().toLowerCase())
+                .filter(Boolean);
+
+            if (requiredNames.length === 0) return null;
+            if (normalizedCandidate.length === 0) return 0;
+
+            const requiredSet = new Set(requiredNames);
+            let matched = 0;
+            for (const s of normalizedCandidate) {
+                if (requiredSet.has(s)) matched += 1;
+            }
+            return Math.round((matched / requiredNames.length) * 100);
+        }
+
+        return null;
+    };
+
+    const backendScore = job?.match?.score;
+    const matchPercentage = (typeof backendScore === 'number' && !Number.isNaN(backendScore))
+        ? Math.round(backendScore)
+        : (typeof job?.matchPercentage === 'number' && !Number.isNaN(job.matchPercentage))
+            ? Math.round(job.matchPercentage)
+            : computeMatchPercentage(job?.requiredSkills, skills);
+
+    const matchBadgeClass = typeof matchPercentage === 'number'
+        ? (matchPercentage >= 80
+            ? 'bg-green-100 text-green-800'
+            : matchPercentage >= 60
+                ? 'bg-yellow-100 text-yellow-800'
+                : 'bg-red-100 text-red-800')
+        : 'bg-gray-100 text-gray-700';
+
+    const matchBarColor = typeof matchPercentage === 'number'
+        ? (matchPercentage >= 80
+            ? '#22c55e'
+            : matchPercentage >= 60
+                ? '#eab308'
+                : '#ef4444')
+        : '#9ca3af';
     
     const [step, setStep] = useState('compose'); // 'compose', 'sending', 'sent'
     const [userEmail, setUserEmail] = useState('');
@@ -46,12 +178,19 @@ export default function ApplyPage() {
     }
 
     const generateCoverLetter = () => {
-        const topSkills = skills 
-            ? Object.entries(skills)
-                .sort((a, b) => b[1] - a[1])
+        const topSkills = Array.isArray(skills)
+            ? skills
+                .map((s) => (typeof s === 'string' ? s.trim() : (s?.name ?? s?.label ?? s?.value ?? '')))
+                .map((s) => (typeof s === 'string' ? s.trim() : ''))
+                .filter(Boolean)
                 .slice(0, 3)
-                .map(([skill]) => skill)
-            : ['Design', 'Communication', 'Tools'];
+            : skills && typeof skills === 'object'
+                ? Object.entries(skills)
+                    .filter(([_, v]) => typeof v === 'number' && !Number.isNaN(v))
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([skill]) => skill)
+                : ['Design', 'Communication', 'Tools'];
 
         return `Dear Hiring Manager,
 
@@ -132,15 +271,67 @@ ${userName || '[Your Name]'}`;
                                             </svg>
                                             {job.salary}
                                         </span>
-                                        {job.matchPercentage && (
+                                        {typeof matchPercentage === 'number' && (
                                             <span className="bg-white/20 px-2 py-1 rounded-full text-xs font-medium">
-                                                {job.matchPercentage}% Match
+                                                {matchPercentage}% Match
                                             </span>
                                         )}
                                     </div>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Skill Match (Bar + tags) */}
+                        {typeof matchPercentage === 'number' && (
+                            <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
+                                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="font-bold text-gray-900">Skill Match</h3>
+                                        <p className="text-sm text-gray-500">Based on your current profile</p>
+                                    </div>
+                                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${matchBadgeClass}`}>
+                                        {matchPercentage}%
+                                    </span>
+                                </div>
+                                <div className="p-6">
+                                    <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-3 rounded-full"
+                                            style={{ width: `${Math.max(0, Math.min(100, matchPercentage))}%`, backgroundColor: matchBarColor }}
+                                        />
+                                    </div>
+
+                                    {(Array.isArray(job?.match?.matched_skills) || Array.isArray(job?.match?.missing_skills)) && (
+                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-800 mb-2">Matched</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {(Array.isArray(job?.match?.matched_skills) ? job.match.matched_skills : [])
+                                                        .slice(0, 16)
+                                                        .map((s) => (
+                                                            <span key={s} className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                                                {s}
+                                                            </span>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-800 mb-2">Missing</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {(Array.isArray(job?.match?.missing_skills) ? job.match.missing_skills : [])
+                                                        .slice(0, 16)
+                                                        .map((s) => (
+                                                            <span key={s} className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                                                                {s}
+                                                            </span>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Application Form */}
                         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">

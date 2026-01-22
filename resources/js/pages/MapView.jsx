@@ -34,6 +34,7 @@ export default function MapView() {
     const [loading, setLoading] = useState(true);
     const [mapCenter, setMapCenter] = useState([DEFAULT_LOCATION.lat, DEFAULT_LOCATION.lng]);
     const [userCity, setUserCity] = useState(DEFAULT_LOCATION.city);
+    const [radiusKm, setRadiusKm] = useState(3); // Keep UI + backend distance filtering in sync
     const [locationLoading, setLocationLoading] = useState(true);
     const [cacheStatus, setCacheStatus] = useState(''); // 'cached' or 'fresh'
     
@@ -55,6 +56,7 @@ export default function MapView() {
         const cityParam = urlParams.get('city');
         const latParam = urlParams.get('lat');
         const lngParam = urlParams.get('lng');
+        const radiusParam = urlParams.get('radius_km');
 
         // Also check localStorage for persisted search state
         const persistedState = localStorage.getItem('mapSearchState');
@@ -93,6 +95,18 @@ export default function MapView() {
         } else if (searchState?.mapCenter) {
             setMapCenter(searchState.mapCenter);
         }
+
+        if (radiusParam) {
+            const parsedRadius = parseFloat(radiusParam);
+            if (!isNaN(parsedRadius) && parsedRadius > 0) {
+                setRadiusKm(parsedRadius);
+            }
+        } else if (searchState?.radiusKm) {
+            const parsedRadius = parseFloat(searchState.radiusKm);
+            if (!isNaN(parsedRadius) && parsedRadius > 0) {
+                setRadiusKm(parsedRadius);
+            }
+        }
     }, []); // Only run on mount
 
     // Persist search state to localStorage when it changes
@@ -101,12 +115,13 @@ export default function MapView() {
             const searchState = {
                 query: searchQuery,
                 city: userCity,
-                mapCenter: mapCenter
+                mapCenter: mapCenter,
+                radiusKm: radiusKm,
             };
             localStorage.setItem('mapSearchState', JSON.stringify(searchState));
             console.log('Saved search state to localStorage:', searchState);
         }
-    }, [searchQuery, userCity, mapCenter, locationLoading]);
+    }, [searchQuery, userCity, mapCenter, radiusKm, locationLoading]);
 
     // Get user's current location on mount
     useEffect(() => {
@@ -118,7 +133,100 @@ export default function MapView() {
         if (!locationLoading) {
             fetchData();
         }
-    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery, radiusKm]);
+
+    const normalizeSkillsForApi = (skills) => {
+        // Agent flow often provides an array of skill strings.
+        if (Array.isArray(skills)) {
+            const normalized = skills
+                .map((s) => (typeof s === 'string' ? s : (s?.name ?? s?.label ?? s?.value ?? '')))
+                .map((s) => (typeof s === 'string' ? s.trim() : ''))
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        // Demo skill session stores a category->level map.
+        // Use the stronger categories as candidate skills so the backend can still rank.
+        if (skills && typeof skills === 'object') {
+            const normalized = Object.entries(skills)
+                .filter(([_, v]) => typeof v === 'number' && !Number.isNaN(v) && v >= 50)
+                .map(([k]) => String(k).trim())
+                .filter(Boolean);
+            return normalized.length > 0 ? normalized : undefined;
+        }
+
+        return undefined;
+    };
+
+    const mapRequiredSkillToCategory = (rawSkill) => {
+        const skill = String(rawSkill || '').toLowerCase();
+        if (!skill) return null;
+
+        // Programming
+        if (
+            skill.includes('javascript') || skill.includes('typescript') || skill.includes('react') ||
+            skill.includes('node') || skill.includes('php') || skill.includes('laravel') ||
+            skill.includes('python') || skill.includes('java') || skill.includes('c#') ||
+            skill.includes('html') || skill.includes('css') || skill.includes('api')
+        ) return 'Programming';
+
+        // Tools / Design tools
+        if (
+            skill.includes('figma') || skill.includes('sketch') || skill.includes('adobe') ||
+            skill.includes('photoshop') || skill.includes('illustrator') || skill.includes('xd') ||
+            skill.includes('canva')
+        ) return 'Tools';
+
+        // Design / UX
+        if (skill.includes('ui') || skill.includes('ux') || skill.includes('design') || skill.includes('wireframe')) {
+            return 'Design';
+        }
+
+        // Prototyping
+        if (skill.includes('prototype') || skill.includes('prototyp')) return 'Prototyping';
+
+        // Research
+        if (
+            skill.includes('research') || skill.includes('user testing') || skill.includes('usability') ||
+            skill.includes('interview')
+        ) return 'Research';
+
+        // Data analysis
+        if (
+            skill.includes('sql') || skill.includes('excel') || skill.includes('tableau') ||
+            skill.includes('power bi') || skill.includes('analytics') || skill.includes('data') ||
+            skill.includes('statistics')
+        ) return 'Data Analysis';
+
+        // Communication
+        if (
+            skill.includes('communication') || skill.includes('collaboration') || skill.includes('teamwork') ||
+            skill.includes('stakeholder') || skill.includes('presentation') || skill.includes('writing')
+        ) return 'Communication';
+
+        // Leadership
+        if (
+            skill.includes('lead') || skill.includes('management') || skill.includes('mentor') ||
+            skill.includes('strategy')
+        ) return 'Leadership';
+
+        return null;
+    };
+
+    const buildCategoryRequirementsFromRequiredSkills = (requiredSkills) => {
+        if (!requiredSkills || typeof requiredSkills !== 'object') return null;
+
+        const requiredByCategory = {};
+        Object.keys(requiredSkills).forEach((skillName) => {
+            const category = mapRequiredSkillToCategory(skillName);
+            if (category) {
+                // Use a constant requirement; we just need a stable signal for demo scoring.
+                requiredByCategory[category] = 70;
+            }
+        });
+
+        return Object.keys(requiredByCategory).length > 0 ? requiredByCategory : null;
+    };
 
     const getUserLocation = () => {
         setLocationLoading(true);
@@ -233,7 +341,7 @@ export default function MapView() {
         setCourses([]);
         
         // Create cache key based on current parameters
-        const cacheKey = `${activeTab}-${seminarFilter}-${searchQuery}-${userCity}-${mapCenter[0].toFixed(2)}-${mapCenter[1].toFixed(2)}`;
+        const cacheKey = `${activeTab}-${seminarFilter}-${searchQuery}-${userCity}-${mapCenter[0].toFixed(2)}-${mapCenter[1].toFixed(2)}-${activeTab === 'jobs' ? radiusKm : ''}`;
         
         // Check cache first
         const cachedData = getCachedData(cacheKey);
@@ -261,15 +369,15 @@ export default function MapView() {
             let cacheData = {};
             
             if (activeTab === 'jobs') {
-                response = await axios.get('/api/jobs', {
-                const skillsToUse = agentData?.skills || userSkills;
+                const skillsToUse = normalizeSkillsForApi(agentData?.skills || userSkills);
                 const response = await axios.get('/api/jobs', {
                     params: { 
                         query: searchQuery, 
                         city: userCity,
                         lat: mapCenter[0], 
                         lng: mapCenter[1],
-                        candidate_skills: skillsToUse || undefined,
+                        radius_km: radiusKm,
+                        candidate_skills: skillsToUse,
                     }
                 });
                 setJobs(response.data.jobs || []);
@@ -338,7 +446,7 @@ export default function MapView() {
         setSelectedItem(item);
         if (activeTab === 'jobs') {
             // Pass search context to job details
-            navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}`);
+            navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}&radius_km=${encodeURIComponent(radiusKm)}`);
         } else if (activeTab === 'seminars') {
             if (seminarFilter === 'in-person') {
                 navigate(`/seminar/${item.id}`);
@@ -377,10 +485,32 @@ export default function MapView() {
     const items = getItems();
     
     // Add match percentage to items (for jobs)
+    const getJobMatchPercentage = (item) => {
+        const backendScore = item?.match?.score;
+        if (typeof backendScore === 'number' && !Number.isNaN(backendScore)) {
+            return Math.round(backendScore);
+        }
+
+        if (typeof item?.matchPercentage === 'number' && !Number.isNaN(item.matchPercentage)) {
+            return Math.round(item.matchPercentage);
+        }
+
+        // Fallback only if backend match isn't present.
+        // If the user's skill profile is category-based (object), map required skills into categories first.
+        if (userSkills && typeof userSkills === 'object' && !Array.isArray(userSkills)) {
+            const requiredByCategory = buildCategoryRequirementsFromRequiredSkills(item?.requiredSkills);
+            if (requiredByCategory) {
+                return calculateMatchPercentage(requiredByCategory);
+            }
+        }
+
+        return calculateMatchPercentage(item?.requiredSkills || {});
+    };
+
     const itemsWithMatch = items.map(item => ({
         ...item,
         matchPercentage: activeTab === 'jobs' 
-            ? calculateMatchPercentage(item.requiredSkills || {})
+            ? getJobMatchPercentage(item)
             : item.matchPercentage || 0
     }));
 
@@ -471,6 +601,27 @@ export default function MapView() {
                             onSearch={handleSearch}
                             placeholder={getSearchPlaceholder()}
                         />
+
+                        {activeTab === 'jobs' && (
+                            <select
+                                value={radiusKm}
+                                onChange={(e) => {
+                                    const next = parseFloat(e.target.value);
+                                    if (!Number.isNaN(next) && next > 0) {
+                                        setRadiusKm(next);
+                                    }
+                                }}
+                                className="px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                title="Search radius"
+                            >
+                                <option value={3}>3 km</option>
+                                <option value={5}>5 km</option>
+                                <option value={10}>10 km</option>
+                                <option value={15}>15 km</option>
+                                <option value={25}>25 km</option>
+                            </select>
+                        )}
+
                         <button
                             onClick={handleSearchSubmit}
                             className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all font-medium"
@@ -671,6 +822,7 @@ export default function MapView() {
                             <JobMap
                                 items={sortedItems}
                                 center={mapCenter}
+                                radiusKm={radiusKm}
                                 onMarkerClick={handleMarkerClick}
                                 selectedItem={selectedItem}
                                 type={activeTab === 'seminars' ? 'seminars' : activeTab}
