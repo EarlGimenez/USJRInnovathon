@@ -11,16 +11,45 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('credentials', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->enum('type', ['work', 'certificate', 'project']);
-            $table->string('title');
-            $table->string('organization');
-            $table->text('description')->nullable();
-            $table->string('start_date');
-            $table->string('end_date')->nullable();
-            $table->timestamps();
+        // The credentials table is created by an earlier migration in this repo.
+        // This migration upgrades the schema to include the expected columns.
+        if (!Schema::hasTable('credentials')) {
+            Schema::create('credentials', function (Blueprint $table) {
+                $table->id();
+                $table->timestamps();
+            });
+        }
+
+        Schema::table('credentials', function (Blueprint $table) {
+            // SQLite limitations: adding FK constraints via ALTER TABLE is tricky,
+            // so we add the column and index; app-level relations still work.
+            if (!Schema::hasColumn('credentials', 'user_id')) {
+                $table->unsignedBigInteger('user_id')->nullable()->index();
+            }
+
+            if (!Schema::hasColumn('credentials', 'type')) {
+                $table->string('type')->nullable();
+            }
+
+            if (!Schema::hasColumn('credentials', 'title')) {
+                $table->string('title')->nullable();
+            }
+
+            if (!Schema::hasColumn('credentials', 'organization')) {
+                $table->string('organization')->nullable();
+            }
+
+            if (!Schema::hasColumn('credentials', 'description')) {
+                $table->text('description')->nullable();
+            }
+
+            if (!Schema::hasColumn('credentials', 'start_date')) {
+                $table->string('start_date')->nullable();
+            }
+
+            if (!Schema::hasColumn('credentials', 'end_date')) {
+                $table->string('end_date')->nullable();
+            }
         });
     }
 
