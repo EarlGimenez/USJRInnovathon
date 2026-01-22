@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\UserSkill;
+use App\Models\Skill;
 use Illuminate\Http\Request;
 
 class SkillController extends Controller
