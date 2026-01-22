@@ -46,7 +46,7 @@ export default function JobDetails() {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: '#114124' }}></div>
             </div>
         );
     }
@@ -57,7 +57,8 @@ export default function JobDetails() {
                 <p className="text-gray-500 mb-4">Job not found</p>
                 <button 
                     onClick={() => navigate('/')}
-                    className="text-blue-500 hover:underline"
+                    style={{ color: '#114124' }}
+                    className="hover:underline"
                 >
                     Back to Map
                 </button>
@@ -71,16 +72,19 @@ export default function JobDetails() {
         <div className="min-h-screen bg-white">
             {/* Header */}
             <header className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 z-10">
-                <div className="flex items-center">
-                    <button 
-                        onClick={() => navigate('/')}
-                        className="mr-3 p-2 hover:bg-gray-100 rounded-full"
-                    >
-                        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </button>
-                    <h1 className="text-lg font-semibold text-gray-900">Job Description & Skills</h1>
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                        <button 
+                            onClick={() => navigate('/')}
+                            className="mr-3 p-2 hover:bg-gray-100 rounded-full"
+                        >
+                            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                        <h1 className="text-lg font-semibold text-gray-900">Job Description & Skills</h1>
+                    </div>
+                    <img src="/lookal_logo.png" alt="Lookal" className="h-7" />
                 </div>
             </header>
 
@@ -104,7 +108,7 @@ export default function JobDetails() {
                             {matchPercentage}% Match
                         </span>
                         {job.type && (
-                            <span className="ml-3 px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm">
+                            <span className="ml-3 px-2 py-1 rounded text-sm" style={{ backgroundColor: '#e8f5e9', color: '#114124' }}>
                                 {job.type}
                             </span>
                         )}
@@ -114,7 +118,7 @@ export default function JobDetails() {
                 {/* Description Section */}
                 <section className="mb-6">
                     <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-                        <span className="w-1 h-5 bg-blue-500 mr-2 rounded"></span>
+                        <span className="w-1 h-5 mr-2 rounded" style={{ backgroundColor: '#114124' }}></span>
                         Description
                     </h3>
                     <p className="text-gray-700 leading-relaxed">{job.description}</p>
@@ -124,7 +128,7 @@ export default function JobDetails() {
                 {job.responsibilities && (
                     <section className="mb-6">
                         <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-                            <span className="w-1 h-5 bg-blue-500 mr-2 rounded"></span>
+                            <span className="w-1 h-5 mr-2 rounded" style={{ backgroundColor: '#114124' }}></span>
                             Responsibilities
                         </h3>
                         <ul className="list-disc list-inside text-gray-700 space-y-1">
@@ -139,7 +143,7 @@ export default function JobDetails() {
                 {job.qualifications && (
                     <section className="mb-6">
                         <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-                            <span className="w-1 h-5 bg-blue-500 mr-2 rounded"></span>
+                            <span className="w-1 h-5 mr-2 rounded" style={{ backgroundColor: '#114124' }}></span>
                             Qualifications
                         </h3>
                         <ul className="list-disc list-inside text-gray-700 space-y-1">
@@ -153,7 +157,7 @@ export default function JobDetails() {
                 {/* Skills Radar Chart */}
                 <section className="mb-6">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                        <span className="w-1 h-5 bg-blue-500 mr-2 rounded"></span>
+                        <span className="w-1 h-5 mr-2 rounded" style={{ backgroundColor: '#114124' }}></span>
                         Qualifications
                     </h3>
                     <div className="bg-gray-50 rounded-lg p-4">
@@ -163,11 +167,11 @@ export default function JobDetails() {
                         />
                         <div className="flex justify-center gap-6 mt-4 text-sm">
                             <div className="flex items-center">
-                                <span className="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>
+                                <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: '#114124' }}></span>
                                 Required Skills
                             </div>
                             <div className="flex items-center">
-                                <span className="w-3 h-3 bg-blue-300 rounded-full mr-2 border-2 border-dashed border-blue-400"></span>
+                                <span className="w-3 h-3 rounded-full mr-2 border-2 border-dashed" style={{ backgroundColor: '#8bc34a', borderColor: '#689f38' }}></span>
                                 User Skills
                             </div>
                         </div>
@@ -179,7 +183,10 @@ export default function JobDetails() {
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200">
                 <button
                     onClick={handleApply}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                    className="w-full text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                    style={{ backgroundColor: '#114124' }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#0d3118'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = '#114124'}
                 >
                     Apply Now
                 </button>

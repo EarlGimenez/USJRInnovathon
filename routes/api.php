@@ -6,6 +6,11 @@ use App\Http\Controllers\Api\SeminarController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\AgentMatchController;
+use App\Http\Controllers\Api\ResumeController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\SkillController;
+use App\Http\Controllers\Api\CredentialController;
 
 /*
 |--------------------------------------------------------------------------

@@ -21,6 +21,10 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'first_name',
+        'last_name',
+        'profile_picture',
+        'cover_photo',
     ];
 
     /**
@@ -44,5 +48,15 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function credentials()
+    {
+        return $this->hasMany(Credential::class);
+    }
+
+    public function skills()
+    {
+        return $this->hasMany(Skill::class);
     }
 }
