@@ -4,7 +4,7 @@ import React from 'react';
  * CourseCard Component
  * Displays online course information from Udemy/Coursera
  */
-export default function CourseCard({ course, onClick }) {
+export default function CourseCard({ course, onClick, onApplyVoucher }) {
     const {
         title,
         description,
@@ -26,6 +26,17 @@ export default function CourseCard({ course, onClick }) {
             return (count / 1000).toFixed(1) + 'K';
         }
         return count?.toString() || '0';
+    };
+
+    // Handle voucher button click
+    const handleVoucherClick = (e) => {
+        e.stopPropagation(); // Prevent card click
+        if (onApplyVoucher) {
+            onApplyVoucher(course);
+        } else {
+            // Default behavior: show alert or navigate to voucher page
+            alert(`Voucher request submitted for "${title}"!\n\nYou'll receive an email with your discount code within 24-48 hours.`);
+        }
     };
 
     // Render star rating
@@ -139,6 +150,19 @@ export default function CourseCard({ course, onClick }) {
                             {skill}
                         </span>
                     </div>
+                )}
+
+                {/* Apply for Voucher Button - Only for paid courses */}
+                {!isFree && (
+                    <button
+                        onClick={handleVoucherClick}
+                        className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-white text-xs font-semibold rounded-lg shadow-sm hover:shadow transition-all"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                        </svg>
+                        Apply for Voucher
+                    </button>
                 )}
             </div>
         </div>
