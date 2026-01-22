@@ -622,54 +622,25 @@ class JobScraper:
 
 
 def main():
+    import sys
+
+    # Get command line arguments
+    job_title = sys.argv[1] if len(sys.argv) > 1 else "Graphics designer"
+    location = sys.argv[2] if len(sys.argv) > 2 else "Taguig City"
+
     # Create scraper instance
     scraper = JobScraper()
 
-    # Example 1: Fetch all remote jobs (no API key needed)
-    print("\n" + "="*60)
-    print("EXAMPLE 1: Fetching remote jobs (no API key required)")
-    print("="*60)
-
-    scraper.fetch_all_jobs(search_term="python")
-
-    # Filter for Python jobs
-    python_jobs = scraper.filter_jobs("python")
-    print(f"\nFound {len(python_jobs)} Python-related jobs")
-
-    # Print first 10 jobs
-    scraper.print_jobs(limit=10)
-
-    # Save results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    scraper.save_to_json(f"jobs_{timestamp}.json")
-    scraper.save_to_csv(f"jobs_{timestamp}.csv")
-
-    # Example 2: Location-based search (requires API keys)
-    print("\n" + "="*60)
-    print("EXAMPLE 2: Location-based search")
-    print("="*60)
-    print("\nTo search for local jobs (e.g., 'Digital designer in Taguig City'):")
-    print("1. Get free API keys:")
-    print("   - Adzuna: https://developer.adzuna.com/")
-    print("   - JSearch: https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch")
-    print("\n2. Set environment variables:")
-    print("   set ADZUNA_APP_ID=your_app_id")
-    print("   set ADZUNA_API_KEY=your_api_key")
-    print("   set RAPIDAPI_KEY=your_rapidapi_key")
-    print("\n3. Then run:")
-    print("   scraper.fetch_local_jobs('Digital designer', 'Taguig City', country_code='ph')")
-
-    # Try location search if API keys are available
+    # Fetch local jobs
     local_jobs = scraper.fetch_local_jobs(
-        job_title="Graphics designer",
-        location="Taguig City",
+        job_title=job_title,
+        location=location,
         country_code="ph"
     )
 
+    # Output JSON to stdout
     if local_jobs:
-        scraper.print_jobs(local_jobs, limit=10)
-        scraper.save_to_json(f"local_jobs_{timestamp}.json", local_jobs)
-        scraper.save_to_csv(f"local_jobs_{timestamp}.csv", local_jobs)
+        print(json.dumps([asdict(job) for job in local_jobs], indent=2, ensure_ascii=True))
 
 
 if __name__ == "__main__":

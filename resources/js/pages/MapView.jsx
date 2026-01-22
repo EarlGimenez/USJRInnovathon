@@ -25,7 +25,8 @@ export default function MapView() {
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
     const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState('Graphics designer'); // Default search
+    const [pendingSearchQuery, setPendingSearchQuery] = useState('Graphics designer'); // For input field
     const [jobs, setJobs] = useState([]);
     const [seminars, setSeminars] = useState([]);
     const [events, setEvents] = useState([]);
@@ -53,7 +54,7 @@ export default function MapView() {
         getUserLocation();
     }, []);
 
-    // Fetch data when location or tab changes - use mock jobs if from agent
+    // Fetch data when location or tab changes, or when search query changes
     useEffect(() => {
         if (!locationLoading) {
             if (fromAgent && activeTab === 'jobs') {
@@ -66,7 +67,7 @@ export default function MapView() {
                 fetchData();
             }
         }
-    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent]);
+    }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery]);
 
     const getUserLocation = () => {
         setLocationLoading(true);
@@ -176,7 +177,11 @@ export default function MapView() {
     };
 
     const handleSearch = (query) => {
-        setSearchQuery(query);
+        setPendingSearchQuery(query);
+    };
+
+    const handleSearchSubmit = () => {
+        setSearchQuery(pendingSearchQuery);
         fetchData();
     };
 
@@ -188,7 +193,8 @@ export default function MapView() {
                 handleApplyClick(item);
                 return;
             }
-            navigate(`/job/${item.id}`);
+            // Pass search context to job details
+            navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}`);
         } else if (activeTab === 'seminars') {
             if (seminarFilter === 'in-person') {
                 navigate(`/seminar/${item.id}`);
@@ -324,12 +330,20 @@ export default function MapView() {
                             onTabChange={setActiveTab}
                         />
                     </div>
-                    <SearchBar 
-                        value={searchQuery}
-                        onChange={setSearchQuery}
-                        onSearch={handleSearch}
-                        placeholder={getSearchPlaceholder()}
-                    />
+                    <div className="flex gap-2">
+                        <SearchBar 
+                            value={pendingSearchQuery}
+                            onChange={setPendingSearchQuery}
+                            onSearch={handleSearch}
+                            placeholder={getSearchPlaceholder()}
+                        />
+                        <button
+                            onClick={handleSearchSubmit}
+                            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all font-medium"
+                        >
+                            Search
+                        </button>
+                    </div>
                     
                     {/* Seminar Filter Toggle - Only show when on seminars tab */}
                     {activeTab === 'seminars' && (
