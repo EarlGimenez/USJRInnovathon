@@ -12,7 +12,7 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
     ) || [];
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+        <div className="fixed inset-0 bg-gray-900/40 flex items-center justify-center z-[9999] p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-slideUp">
                 {/* Header */}
                 <div className="bg-gradient-to-r from-orange-500 to-red-500 p-6 text-white">
@@ -24,7 +24,7 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
                                 </svg>
                             </div>
                             <div>
-                                <h3 className="text-xl font-bold">Skill Gap Detected</h3>
+                                <h3 className="text-xl font-bold">Suggested Skills to Strengthen</h3>
                                 <p className="text-sm text-white text-opacity-90">
                                     Current match: {matchPercentage}%
                                 </p>
@@ -64,7 +64,7 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
                     </div>
 
                     <p className="text-gray-700 mb-4">
-                        To increase your match percentage, consider developing these skills:
+                        Based on your prompt and the job postings we found, these look like helpful areas to learn or improve:
                     </p>
 
                     {/* Missing skills */}
@@ -125,7 +125,7 @@ export default function SkillGapPopup({ skillGaps, matchPercentage, suggestedSte
 
                     {/* Info note */}
                     <p className="text-xs text-gray-500 text-center mt-4">
-                        💡 Improving these skills can increase your job match rate by up to {100 - matchPercentage}%
+                        Tip: This is an estimate — improving even 1–2 areas can make matches stronger.
                     </p>
                 </div>
             </div>

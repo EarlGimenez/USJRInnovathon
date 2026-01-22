@@ -76,13 +76,45 @@ def ensure_skills_table(conn: sqlite3.Connection) -> None:
     if "embedding" not in cols:
         conn.execute("ALTER TABLE skills ADD COLUMN embedding BLOB;")
 
+    # If the table was created outside of this script (or via an older migration),
+    # `name` might not actually be UNIQUE. SQLite requires the conflict target to
+    # match a PRIMARY KEY or UNIQUE constraint/index, otherwise ON CONFLICT(...) fails.
+    #
+    # 1) Normalize existing names to reduce duplicates
+    # 2) Remove any duplicates that remain
+    # 3) Create a UNIQUE index so ON CONFLICT(name) works reliably
+    existing = conn.execute("SELECT id, name FROM skills").fetchall()
+    for row_id, name in existing:
+        normalized = normalize_skill_name(name)
+        if normalized and normalized != name:
+            conn.execute("UPDATE skills SET name = ? WHERE id = ?", (normalized, row_id))
+
+    # Keep the earliest row per name, delete the rest
+    conn.execute(
+        """
+        DELETE FROM skills
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM skills GROUP BY name
+        );
+        """
+    )
+
+    # Ensure uniqueness for the ON CONFLICT clause
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_skills_name ON skills(name);")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);")
     conn.commit()
+
+
+def table_has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table});").fetchall()]
+    return column in cols
 
 
 def normalize_skill_name(name: str) -> str:
     name = name.strip()
     name = " ".join(name.split())
+    # Use a stable casing to avoid case-only duplicates in SQLite.
+    name = name.lower()
     return name
 
 
@@ -187,7 +219,24 @@ def build_embeddings(
 
 
 
-def upsert_skills(conn: sqlite3.Connection, rows: Sequence[CandidateSkillRow]) -> None:
+def upsert_skills(conn: sqlite3.Connection, rows: Sequence[CandidateSkillRow], *, user_id: int | None = None) -> None:
+    # Some project variants store user skills as rows with a NOT NULL `user_id` column.
+    # If present, we must include it in the insert.
+    if table_has_column(conn, "skills", "user_id"):
+        if user_id is None:
+            raise ValueError("skills.user_id exists but no user_id was provided")
+
+        conn.executemany(
+            """
+            INSERT INTO skills(user_id, name, embedding)
+            VALUES(?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                embedding=excluded.embedding;
+            """,
+            [(user_id, r.name, r.embedding) for r in rows],
+        )
+        return
+
     conn.executemany(
         """
         INSERT INTO skills(name, embedding)
@@ -206,6 +255,12 @@ def main() -> None:
         "--model",
         default="sentence-transformers/all-MiniLM-L6-v2",
         help="Sentence-Transformers model name",
+    )
+    parser.add_argument(
+        "--user-id",
+        type=int,
+        default=1,
+        help="If the `skills` table has a NOT NULL user_id column, use this value for inserts",
     )
     parser.add_argument("--batch-size", type=int, default=256, help="Embedding batch size (tune for your GPU VRAM)")
     args = parser.parse_args()
@@ -249,7 +304,7 @@ def main() -> None:
         chunk_size = 500
         for start in range(0, len(rows), chunk_size):
             chunk = rows[start : start + chunk_size]
-            upsert_skills(conn, chunk)
+            upsert_skills(conn, chunk, user_id=args.user_id)
             conn.commit()
             print(f"Upserted {min(start + chunk_size, len(rows))}/{len(rows)}")
 

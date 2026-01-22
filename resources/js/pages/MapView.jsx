@@ -338,7 +338,7 @@ export default function MapView() {
             {/* Skill Gap Popup - from LangGraph UI config */}
             {showSkillGapPopup && agenticData?.ui && (
                 <SkillGapPopup
-                    skillGaps={agenticData.jobs?.[0]?.missing_skills || []}
+                    skillGaps={agenticData.skill_gaps || agenticData.jobs?.[0]?.missing_skills || []}
                     matchPercentage={Math.round(agenticData.average_match_score || agenticData.jobs?.[0]?.match_score || 50)}
                     suggestedSteps={agenticData.ui.suggested_next_steps || []}
                     onClose={() => setShowSkillGapPopup(false)}

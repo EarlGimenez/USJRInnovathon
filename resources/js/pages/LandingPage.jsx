@@ -40,12 +40,125 @@ export default function LandingPage() {
         return keywords.some((k) => t.includes(k));
     };
 
-    const fetchRelevantJobs = async ({ query, city }) => {
+    const getLatLngForCity = (city) => {
+        const c = String(city || '').toLowerCase();
+        if (c.includes('cebu')) return { lat: 10.3157, lng: 123.8854 };
+        if (c.includes('manila')) return { lat: 14.5995, lng: 120.9842 };
+        if (c.includes('taguig') || c.includes('bgc')) return { lat: 14.5176, lng: 121.0509 };
+        return null;
+    };
+
+    const toCandidateSkillEntries = (skills) => {
+        if (!skills) return [];
+
+        // Accept: string[], { skillName: score }, or [{ skill, credential_count, experience_count }]
+        if (Array.isArray(skills)) {
+            const out = [];
+            for (const entry of skills) {
+                if (typeof entry === 'string') {
+                    const s = entry.trim();
+                    if (!s) continue;
+                    out.push({ skill: s, credential_count: 0, experience_count: 1 });
+                    continue;
+                }
+                if (entry && typeof entry === 'object' && typeof entry.skill === 'string') {
+                    const s = entry.skill.trim();
+                    if (!s) continue;
+                    out.push({
+                        skill: s,
+                        credential_count: Number.isFinite(entry.credential_count) ? entry.credential_count : 0,
+                        experience_count: Number.isFinite(entry.experience_count) ? entry.experience_count : 1,
+                    });
+                }
+            }
+
+            // Deduplicate by normalized skill name
+            const seen = new Set();
+            const uniq = [];
+            for (const e of out) {
+                const k = String(e.skill || '').toLowerCase().trim();
+                if (!k || seen.has(k)) continue;
+                seen.add(k);
+                uniq.push(e);
+            }
+            return uniq.slice(0, 16);
+        }
+
+        if (skills && typeof skills === 'object') {
+            const entries = [];
+            for (const [k, v] of Object.entries(skills)) {
+                const s = String(k || '').trim();
+                if (!s) continue;
+                // If there's a score/proficiency present, treat it as "experience" evidence.
+                const n = Number(v);
+                entries.push({
+                    skill: s,
+                    credential_count: 0,
+                    experience_count: Number.isFinite(n) ? Math.max(1, Math.round(n / 30)) : 1,
+                });
+            }
+            return entries.slice(0, 16);
+        }
+
+        return [];
+    };
+
+    const computeSkillGapFromJobs = (jobsList) => {
+        const jobs = Array.isArray(jobsList) ? jobsList : [];
+        const scores = jobs
+            .map((j) => Number(j?.match?.score))
+            .filter((n) => Number.isFinite(n));
+
+        const average = scores.length > 0
+            ? scores.reduce((a, b) => a + b, 0) / scores.length
+            : 0;
+
+        // Prefer missing_skills from the match result if available.
+        // Aggregate from top jobs to recommend the most common gaps.
+        const sorted = [...jobs].sort((a, b) => {
+            const sa = Number(a?.match?.score);
+            const sb = Number(b?.match?.score);
+            if (!Number.isFinite(sa) && !Number.isFinite(sb)) return 0;
+            if (!Number.isFinite(sa)) return 1;
+            if (!Number.isFinite(sb)) return -1;
+            return sb - sa;
+        });
+
+        const counts = new Map();
+        for (const j of sorted.slice(0, 5)) {
+            const missing = Array.isArray(j?.match?.missing_skills) ? j.match.missing_skills : [];
+            for (const s of missing) {
+                const key = String(s || '').trim();
+                if (!key) continue;
+                counts.set(key, (counts.get(key) || 0) + 1);
+            }
+        }
+
+        const skillGaps = [...counts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([skill]) => skill)
+            .slice(0, 8);
+
+        return {
+            average_match_score: Math.round(average * 10) / 10,
+            skill_gaps: skillGaps,
+        };
+    };
+
+    const fetchRelevantJobs = async ({ query, city, candidateSkills, similarityThreshold }) => {
         try {
+            const coords = getLatLngForCity(city);
             const res = await axios.get('/api/jobs', {
                 params: {
                     query: query || '',
                     city: city || 'Cebu',
+                    ...(coords ? coords : {}),
+                    ...(Array.isArray(candidateSkills) && candidateSkills.length > 0
+                        ? { candidate_skills: candidateSkills }
+                        : {}),
+                    ...(typeof similarityThreshold === 'number'
+                        ? { similarity_threshold: similarityThreshold }
+                        : {}),
                 },
             });
             return res.data?.jobs || [];
@@ -192,13 +305,34 @@ export default function LandingPage() {
 
                 // Always populate both jobs + trainings so either tab has relevant results
                 const [jobsList, trainings] = await Promise.all([
-                    fetchRelevantJobs({ query: topicOrPrompt, city: extractedData.location || 'Cebu' }),
+                    fetchRelevantJobs({
+                        query: topicOrPrompt,
+                        city: extractedData.location || 'Cebu',
+                        candidateSkills: toCandidateSkillEntries(extractedData.skills || []),
+                        similarityThreshold: 0.75,
+                    }),
                     fetchRelevantTrainings({
                         query: topicOrPrompt,
                         city: extractedData.location || 'Cebu',
                         keywords,
                     }),
                 ]);
+
+                const decoratedJobs = (jobsList || []).map((j) => {
+                    const match = j?.match;
+                    const score = Number(match?.score);
+                    return {
+                        ...j,
+                        match_score: Number.isFinite(score) ? score : null,
+                        missing_skills: Array.isArray(match?.missing_skills) ? match.missing_skills : [],
+                        matched_skills: Array.isArray(match?.matched_skills) ? match.matched_skills : [],
+                    };
+                });
+
+                const { average_match_score, skill_gaps } = computeSkillGapFromJobs(decoratedJobs);
+                const q = String(topicOrPrompt || '').toLowerCase();
+                const matchThreshold = (q.includes('intern') || q.includes('junior') || q.includes('entry')) ? 65 : 70;
+                const showSkillGapPopup = average_match_score < matchThreshold;
 
                 results = (jobsList || []).slice(0, 5).map((j, i) => ({
                     id: j.id || i + 1,
@@ -213,16 +347,30 @@ export default function LandingPage() {
                     prompt: prompt,
                     query: topicOrPrompt,
                     extracted_skills: extractedData.skills || [],
-                    jobs: jobsList,
+                    jobs: decoratedJobs,
                     trainings,
                     results,
+                    average_match_score,
+                    has_good_matches: !showSkillGapPopup,
                     ui: {
                         default_tab: 'jobs',
                         default_seminar_filter: preferred,
+                        show_skill_gap_popup: showSkillGapPopup,
+                        popup_title: showSkillGapPopup ? 'Suggested Skills to Strengthen' : '',
+                        popup_body: showSkillGapPopup
+                            ? `Your average match score is ${average_match_score}%. Based on the postings we found, a few skills look worth strengthening to improve matches.`
+                            : '',
+                        suggested_next_steps: showSkillGapPopup
+                            ? [
+                                'Review the missing skills and prioritize 1–2 to learn first',
+                                'Open the Training tab to see recommended courses/seminars',
+                                'Update your profile skills and re-run the search',
+                              ]
+                            : [],
                     },
-                    has_skill_gap: false,
-                    skill_gaps: [],
-                    match_percentage: 100
+                    has_skill_gap: showSkillGapPopup,
+                    skill_gaps,
+                    match_percentage: Math.round(average_match_score || 0)
                 });
 
                 // Update user profile with extracted data
@@ -247,13 +395,32 @@ export default function LandingPage() {
                 const preferred = inferTrainingPreference(prompt, extractedData);
 
                 const [jobsList, trainings] = await Promise.all([
-                    fetchRelevantJobs({ query: topicOrPrompt, city: extractedData.location || 'Cebu' }),
+                    fetchRelevantJobs({
+                        query: topicOrPrompt,
+                        city: extractedData.location || 'Cebu',
+                        // For training prompts, we still fetch relevant jobs using prompt keywords.
+                        candidateSkills: toCandidateSkillEntries(keywords.slice(0, 8)),
+                        similarityThreshold: 0.75,
+                    }),
                     fetchRelevantTrainings({
                         query: topicOrPrompt,
                         city: extractedData.location || 'Cebu',
                         keywords,
                     }),
                 ]);
+
+                const decoratedJobs = (jobsList || []).map((j) => {
+                    const match = j?.match;
+                    const score = Number(match?.score);
+                    return {
+                        ...j,
+                        match_score: Number.isFinite(score) ? score : null,
+                        missing_skills: Array.isArray(match?.missing_skills) ? match.missing_skills : [],
+                        matched_skills: Array.isArray(match?.matched_skills) ? match.matched_skills : [],
+                    };
+                });
+
+                const { average_match_score, skill_gaps } = computeSkillGapFromJobs(decoratedJobs);
 
                 // Also keep a small “results” list for the loading screen copy
                 results = trainings.slice(0, 5).map((t, i) => ({
@@ -270,16 +437,21 @@ export default function LandingPage() {
                     prompt: prompt,
                     query: topicOrPrompt,
                     extracted_skills: extractedData.topic ? [extractedData.topic] : [],
-                    jobs: jobsList,
+                    jobs: decoratedJobs,
                     trainings,
                     results,
+                    average_match_score,
                     ui: {
                         default_tab: 'seminars',
                         default_seminar_filter: preferred,
+                        show_skill_gap_popup: false,
+                        popup_title: '',
+                        popup_body: '',
+                        suggested_next_steps: [],
                     },
                     has_skill_gap: false,
-                    skill_gaps: [],
-                    match_percentage: 100
+                    skill_gaps,
+                    match_percentage: Math.round(average_match_score || 0)
                 });
 
                 // Update profile for training searches too
