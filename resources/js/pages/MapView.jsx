@@ -527,6 +527,34 @@ export default function MapView() {
                                     </div>
                                 )}
                                 
+                                {/* View More Links */}
+                                <div className="mt-6 space-y-3">
+                                    <p className="text-sm text-gray-500 mb-2">Browse more courses on:</p>
+                                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                        <a 
+                                            href={`https://www.udemy.com/courses/search/?q=${encodeURIComponent(searchQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                                        >
+                                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 0L1.608 6v12L12 24l10.392-6V6L12 0zm-1.524 17.462H8.618V9.59l1.858-1.054v8.926zm4.478 0h-1.857V8.536l1.857-1.054v10.98z"/>
+                                            </svg>
+                                            View on Udemy
+                                        </a>
+                                        <a 
+                                            href={`https://www.coursera.org/search?query=${encodeURIComponent(searchQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                                        >
+                                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M11.374 23.977c-4.027-.251-7.64-2.509-9.94-6.104C-.881 14.058-.368 9.102 1.979 5.335a12.072 12.072 0 015.463-4.883C9.71-.486 12.542-.491 14.87.576c2.012.922 3.607 2.362 4.857 4.17.127.184-.11.48-.32.402-2.94-1.1-5.614-.654-7.955 1.356-1.953 1.677-2.782 3.859-2.47 6.343.316 2.514 1.54 4.454 3.592 5.908 1.25.884 2.63 1.398 4.138 1.586.233.029.319.15.3.343a12.075 12.075 0 01-1.257 3.67c-.125.234-.315.412-.532.529-.67.36-1.397.498-2.14.576-.498.053-.5.052-.709-.019z"/>
+                                            </svg>
+                                            View on Coursera
+                                        </a>
+                                    </div>
+                                </div>
 
                             </div>
                         </div>

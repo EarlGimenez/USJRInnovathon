@@ -19,16 +19,34 @@ import os
 import json
 import base64
 import argparse
+import traceback
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 import requests
+
+# Debug logging helper - always outputs to stderr so stdout stays clean for JSON
+DEBUG = os.getenv('RESUME_PARSER_DEBUG', '1') == '1'  # Enable by default for troubleshooting
+
+def debug_log(message: str, data: any = None):
+    """Log debug message to stderr with timestamp"""
+    if DEBUG:
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        log_msg = f"[DEBUG {timestamp}] {message}"
+        if data is not None:
+            if isinstance(data, dict) or isinstance(data, list):
+                log_msg += f"\n{json.dumps(data, indent=2, default=str)[:1000]}"
+            else:
+                log_msg += f" | {str(data)[:500]}"
+        print(log_msg, file=sys.stderr)
 
 # Load environment variables
 try:
     from dotenv import load_dotenv
     load_dotenv()
+    debug_log("Loaded .env file")
 except ImportError:
-    pass
+    debug_log("python-dotenv not installed, skipping .env load")
 
 # Skill categories mapping (matches SkillContext.jsx)
 SKILL_CATEGORIES = {
@@ -69,14 +87,18 @@ ALL_SKILLS = list(set(ALL_SKILLS))
 
 def convert_pdf_to_images(pdf_path: str) -> list[str]:
     """Convert PDF pages to base64 encoded PNG images using PyMuPDF"""
+    debug_log(f"Converting PDF to images: {pdf_path}")
     try:
         import fitz  # PyMuPDF
+        debug_log(f"PyMuPDF (fitz) version: {fitz.version}")
         
         doc = fitz.open(pdf_path)
+        debug_log(f"PDF opened successfully, pages: {len(doc)}")
         base64_images = []
         
         # Convert first 3 pages max to save tokens
         for page_num in range(min(3, len(doc))):
+            debug_log(f"Processing page {page_num + 1}")
             page = doc[page_num]
             # Render at 150 DPI for good quality
             mat = fitz.Matrix(150/72, 150/72)
@@ -84,10 +106,18 @@ def convert_pdf_to_images(pdf_path: str) -> list[str]:
             img_bytes = pix.tobytes("png")
             base64_str = base64.b64encode(img_bytes).decode("utf-8")
             base64_images.append(base64_str)
+            debug_log(f"Page {page_num + 1} converted, base64 length: {len(base64_str)}")
         
         doc.close()
+        debug_log(f"PDF conversion complete, {len(base64_images)} images")
         return base64_images
+    except ImportError as e:
+        debug_log(f"PyMuPDF not installed: {e}")
+        print(f"Error: PyMuPDF (fitz) not installed. Run: pip install PyMuPDF", file=sys.stderr)
+        return []
     except Exception as e:
+        debug_log(f"Error converting PDF: {e}")
+        debug_log(f"Traceback: {traceback.format_exc()}")
         print(f"Error converting PDF: {e}", file=sys.stderr)
         return []
 
@@ -122,24 +152,49 @@ def parse_resume_with_gpt(file_path: str, api_key: Optional[str] = None) -> dict
     Returns:
         Parsed profile data as dictionary
     """
+    debug_log("="*60)
+    debug_log(f"STARTING RESUME PARSE: {file_path}")
+    debug_log("="*60)
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        debug_log(f"ERROR: File not found: {file_path}")
+        return {"error": f"File not found: {file_path}"}
+    
+    file_size = os.path.getsize(file_path)
+    debug_log(f"File size: {file_size} bytes ({file_size / 1024:.1f} KB)")
+    
     # Get API key
     api_key = api_key or os.getenv("OPENAI_API_KEY")
     if not api_key or api_key == "your-api-key-here":
+        debug_log("ERROR: OpenAI API key not configured")
         return {"error": "OpenAI API key not configured. Please set OPENAI_API_KEY in .env file."}
+    debug_log(f"API key present: {api_key[:8]}...{api_key[-4:]} (length: {len(api_key)})")
     
     # Prepare images - convert PDF to images, or encode image directly
     file_ext = Path(file_path).suffix.lower()
+    debug_log(f"File extension: {file_ext}")
     
     if file_ext == ".pdf":
         # Convert PDF pages to images using PyMuPDF
+        debug_log("Processing as PDF...")
         base64_images = convert_pdf_to_images(file_path)
         if not base64_images:
+            debug_log("ERROR: Failed to convert PDF to images")
             return {"error": "Failed to convert PDF to images. Please try uploading an image instead."}
         media_type = "image/png"
     else:
         # Direct image upload
-        base64_images = [encode_image_to_base64(file_path)]
+        debug_log(f"Processing as image ({file_ext})...")
+        try:
+            base64_images = [encode_image_to_base64(file_path)]
+            debug_log(f"Image encoded, base64 length: {len(base64_images[0])}")
+        except Exception as e:
+            debug_log(f"ERROR encoding image: {e}")
+            return {"error": f"Failed to encode image: {str(e)}"}
         media_type = get_image_media_type(file_path)
+    
+    debug_log(f"Media type: {media_type}, Image count: {len(base64_images)}")
     
     # Build the content array with images
     content = [
@@ -221,8 +276,11 @@ For competencyRatings, calculate an aggregate score (0-100) for each category ba
             "Authorization": f"Bearer {api_key}"
         }
         
+        model = "gpt-5-mini"
+        debug_log(f"Using model: {model}")
+        
         payload = {
-            "model": "gpt-5-mini",
+            "model": model,
             "messages": [
                 {
                     "role": "user",
@@ -232,6 +290,9 @@ For competencyRatings, calculate an aggregate score (0-100) for each category ba
             "max_completion_tokens": 16000
         }
         
+        debug_log("Sending request to OpenAI API...")
+        debug_log(f"Payload size: {len(json.dumps(payload))} chars (prompt + images)")
+        
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
@@ -239,16 +300,27 @@ For competencyRatings, calculate an aggregate score (0-100) for each category ba
             timeout=120
         )
         
+        debug_log(f"API Response status: {response.status_code}")
+        
         if response.status_code != 200:
+            debug_log(f"API ERROR: {response.text[:1000]}")
             return {"error": f"OpenAI API error: {response.status_code} - {response.text}"}
         
         response_data = response.json()
+        debug_log("API Response received successfully")
+        
+        # Log usage info if available
+        if "usage" in response_data:
+            debug_log(f"Token usage: {response_data['usage']}")
         
         # Check if response has expected structure
         if "choices" not in response_data or len(response_data["choices"]) == 0:
+            debug_log(f"ERROR: Unexpected API response structure")
+            debug_log(f"Response keys: {list(response_data.keys())}")
             return {"error": f"Unexpected API response structure: {json.dumps(response_data)[:500]}"}
         
         if "message" not in response_data["choices"][0]:
+            debug_log(f"ERROR: No message in response")
             return {"error": f"No message in response: {json.dumps(response_data)[:500]}"}
             
         content = response_data["choices"][0]["message"].get("content")
@@ -256,8 +328,13 @@ For competencyRatings, calculate an aggregate score (0-100) for each category ba
             # Check for refusal
             refusal = response_data["choices"][0]["message"].get("refusal")
             if refusal:
+                debug_log(f"API REFUSED: {refusal}")
                 return {"error": f"API refused request: {refusal}"}
+            debug_log("ERROR: Empty content in response")
             return {"error": f"Empty content in response: {json.dumps(response_data)[:500]}"}
+        
+        debug_log(f"Response content length: {len(content)} chars")
+        debug_log(f"Response preview: {content[:200]}...")
         
         # Parse response
         response_text = content.strip()
@@ -270,9 +347,25 @@ For competencyRatings, calculate an aggregate score (0-100) for each category ba
             response_text = "\n".join(lines)
         
         # Parse JSON
-        parsed_data = json.loads(response_text)
+        debug_log("Parsing JSON response...")
+        try:
+            parsed_data = json.loads(response_text)
+            debug_log(f"JSON parsed successfully, keys: {list(parsed_data.keys())}")
+        except json.JSONDecodeError as e:
+            debug_log(f"JSON PARSE ERROR at position {e.pos}: {e.msg}")
+            debug_log(f"Problematic text around error: ...{response_text[max(0,e.pos-50):e.pos+50]}...")
+            return {"error": f"Failed to parse GPT response as JSON: {str(e)}", "raw_response": response_text[:500]}
         
         # Validate and set defaults
+        debug_log("Validating and setting defaults...")
+        
+        # Log what we found
+        debug_log(f"Found firstName: {parsed_data.get('firstName', '(missing)')}")
+        debug_log(f"Found lastName: {parsed_data.get('lastName', '(missing)')}")
+        debug_log(f"Found skills count: {len(parsed_data.get('skills', []))}")
+        debug_log(f"Found credentials count: {len(parsed_data.get('credentials', []))}")
+        debug_log(f"Found competencyRatings: {parsed_data.get('competencyRatings', '(missing)')}")
+        
         result = {
             "firstName": parsed_data.get("firstName", ""),
             "lastName": parsed_data.get("lastName", ""),
@@ -291,11 +384,25 @@ For competencyRatings, calculate an aggregate score (0-100) for each category ba
             }
         }
         
+        debug_log("="*60)
+        debug_log("RESUME PARSE COMPLETE - SUCCESS")
+        debug_log(f"Final result skills: {[s.get('name') for s in result['skills'][:5]]}...")
+        debug_log("="*60)
+        
         return result
         
     except json.JSONDecodeError as e:
-        return {"error": f"Failed to parse GPT response as JSON: {str(e)}", "raw_response": response_text}
+        debug_log(f"JSON DECODE ERROR: {e}")
+        return {"error": f"Failed to parse GPT response as JSON: {str(e)}", "raw_response": response_text[:500]}
+    except requests.exceptions.Timeout:
+        debug_log("ERROR: Request timed out after 120 seconds")
+        return {"error": "Request to OpenAI API timed out. Please try again."}
+    except requests.exceptions.ConnectionError as e:
+        debug_log(f"CONNECTION ERROR: {e}")
+        return {"error": f"Could not connect to OpenAI API: {str(e)}"}
     except Exception as e:
+        debug_log(f"UNEXPECTED ERROR: {type(e).__name__}: {e}")
+        debug_log(f"Traceback: {traceback.format_exc()}")
         return {"error": f"GPT API error: {str(e)}"}
 
 
@@ -303,11 +410,30 @@ def main():
     parser = argparse.ArgumentParser(description="Parse resume using GPT Vision")
     parser.add_argument("file_path", help="Path to resume file (PDF, PNG, JPG)")
     parser.add_argument("--api-key", help="OpenAI API key (defaults to OPENAI_API_KEY env var)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--no-debug", action="store_true", help="Disable debug logging")
     
     args = parser.parse_args()
     
+    # Handle debug flag
+    global DEBUG
+    if args.debug:
+        DEBUG = True
+    elif args.no_debug:
+        DEBUG = False
+    
+    debug_log("="*60)
+    debug_log("RESUME PARSER STARTED")
+    debug_log(f"Python version: {sys.version}")
+    debug_log(f"Working directory: {os.getcwd()}")
+    debug_log(f"Script path: {__file__}")
+    debug_log(f"File path argument: {args.file_path}")
+    debug_log(f"API key provided via arg: {bool(args.api_key)}")
+    debug_log("="*60)
+    
     # Validate file exists
     if not os.path.exists(args.file_path):
+        debug_log(f"ERROR: File not found: {args.file_path}")
         print(json.dumps({"error": f"File not found: {args.file_path}"}))
         sys.exit(1)
     
@@ -315,18 +441,24 @@ def main():
     valid_extensions = [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"]
     file_ext = Path(args.file_path).suffix.lower()
     if file_ext not in valid_extensions:
+        debug_log(f"ERROR: Invalid file type: {file_ext}")
         print(json.dumps({"error": f"Invalid file type: {file_ext}. Supported: {valid_extensions}"}))
         sys.exit(1)
+    
+    debug_log(f"File validated: {args.file_path} ({file_ext})")
     
     # Parse resume
     result = parse_resume_with_gpt(args.file_path, args.api_key)
     
-    # Output JSON
+    # Output JSON (to stdout - this is what PHP reads)
     print(json.dumps(result, indent=2))
     
     # Exit with error code if there was an error
     if "error" in result:
+        debug_log(f"EXITING WITH ERROR: {result.get('error')}")
         sys.exit(1)
+    else:
+        debug_log("EXITING SUCCESSFULLY")
 
 
 if __name__ == "__main__":
