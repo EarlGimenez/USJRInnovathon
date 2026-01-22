@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import SkillRadarChart from '../components/charts/SkillRadarChart';
 import { useSkills } from '../context/SkillContext';
@@ -7,6 +7,7 @@ import { useSkills } from '../context/SkillContext';
 export default function JobDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { userSkills, calculateMatchPercentage } = useSkills();
     
     const [job, setJob] = useState(null);
@@ -19,7 +20,15 @@ export default function JobDetails() {
     const fetchJobDetails = async () => {
         setLoading(true);
         try {
-            const response = await axios.get(`/api/jobs/${id}`);
+            // Include search context from URL parameters
+            const query = searchParams.get('query') || 'developer';
+            const city = searchParams.get('city') || 'Manila';
+            const lat = searchParams.get('lat') || '14.5995';
+            const lng = searchParams.get('lng') || '120.9842';
+            
+            const response = await axios.get(`/api/jobs/${id}`, {
+                params: { query, city, lat, lng }
+            });
             setJob(response.data.job);
         } catch (error) {
             console.error('Error fetching job details:', error);
@@ -94,9 +103,6 @@ export default function JobDetails() {
                         }`}>
                             {matchPercentage}% Match
                         </span>
-                        {job.salary && (
-                            <span className="ml-3 text-gray-600">{job.salary}</span>
-                        )}
                         {job.type && (
                             <span className="ml-3 px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm">
                                 {job.type}

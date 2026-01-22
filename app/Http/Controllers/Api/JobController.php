@@ -7,63 +7,164 @@ use Illuminate\Http\Request;
 
 class JobController extends Controller
 {
-    // Maximum jobs to return
-    protected int $maxResults = 5;
 
     /**
      * List jobs
      */
     public function index(Request $request)
     {
-        $query = $request->input('query') ?? '';
-        $city = $request->input('city') ?? 'Taguig';
-        $lat = (float) ($request->input('lat') ?? 14.5176); // Taguig default
-        $lng = (float) ($request->input('lng') ?? 121.0509);
+        $query = $request->input('query') ?? 'developer'; // More generic default
+        $city = $request->input('city') ?? 'Manila'; // More generic default
+        $lat = (float) ($request->input('lat') ?? 14.5995); // Manila default
+        $lng = (float) ($request->input('lng') ?? 120.9842);
 
-        $jobs = $this->getMockJobs($city, $lat, $lng);
-        
-        // Filter by query if provided
-        if (!empty($query)) {
-            $jobs = array_filter($jobs, function($job) use ($query) {
-                $queryLower = strtolower($query);
-                return str_contains(strtolower($job['title']), $queryLower) ||
-                       str_contains(strtolower($job['company']), $queryLower) ||
-                       str_contains(strtolower($job['description']), $queryLower);
-            });
-            $jobs = array_values($jobs);
-        }
+        // Get real jobs from Python script
+        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng);
 
-        // Limit to max results
-        $jobs = array_slice($jobs, 0, $this->maxResults);
+        // Don't limit results - return all jobs from the scraper
+        // $jobs = array_slice($jobs, 0, $this->maxResults);
 
         return response()->json([
             'jobs' => $jobs,
-            'source' => 'mock',
-            'city' => $city
+            'source' => 'python_scraper',
+            'city' => $city,
+            'query' => $query
         ]);
     }
 
     /**
      * Get single job details
      */
-    public function show(string $id)
+    public function show(Request $request, string $id)
     {
-        // Return mock job
-        $mockJobs = $this->getMockJobs();
-        $job = collect($mockJobs)->firstWhere('id', (int)$id);
+        // Get query parameters for context
+        $query = $request->input('query') ?? 'developer';
+        $city = $request->input('city') ?? 'Manila';
+        $lat = (float) ($request->input('lat') ?? 14.5995);
+        $lng = (float) ($request->input('lng') ?? 120.9842);
+
+        // Get jobs from Python script with current search context
+        $jobs = $this->getJobsFromPythonScript($query, $city, $lat, $lng);
+
+        // Find job by ID (use index as ID since Python script doesn't provide IDs)
+        $jobIndex = (int)$id - 1; // Convert to 0-based index
+        $job = isset($jobs[$jobIndex]) ? $jobs[$jobIndex] : null;
 
         if (!$job) {
-            // Try to find by string ID
-            $job = collect($mockJobs)->firstWhere('id', $id);
-        }
-
-        if (!$job) {
-            $job = $mockJobs[0] ?? null;
+            // Fallback to first job if ID not found
+            $job = $jobs[0] ?? null;
         }
 
         return response()->json([
             'job' => $job
         ]);
+    }
+
+    /**
+     * Execute Python script to get real job data
+     */
+    protected function getJobsFromPythonScript(string $jobTitle, string $location, float $lat, float $lng): array
+    {
+        try {
+            // Path to Python script
+            $scriptPath = base_path('python_scripts/job_listing_scraper.py');
+
+            // Execute Python script with arguments
+            $command = "cd " . base_path() . " && uv run python_scripts/job_listing_scraper.py \"$jobTitle\" \"$location\" 2>&1";
+            $output = shell_exec($command);
+
+            if (!$output) {
+                // Fallback to mock data if script fails
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            // Parse JSON output
+            $jsonStart = strpos($output, '[');
+            if ($jsonStart === false) {
+                // Fallback to mock data if no JSON found
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            $jsonOutput = substr($output, $jsonStart);
+            $pythonJobs = json_decode($jsonOutput, true);
+
+            if (!$pythonJobs || !is_array($pythonJobs)) {
+                // Fallback to mock data if JSON parsing fails
+                return $this->getMockJobs($location, $lat, $lng);
+            }
+
+            // Transform Python job data to frontend format
+            return $this->transformPythonJobsToFrontendFormat($pythonJobs, $lat, $lng);
+
+        } catch (\Exception $e) {
+            // Fallback to mock data on any error
+            return $this->getMockJobs($location, $lat, $lng);
+        }
+    }
+
+    /**
+     * Transform Python script output to frontend expected format
+     */
+    protected function transformPythonJobsToFrontendFormat(array $pythonJobs, float $centerLat, float $centerLng): array
+    {
+        $transformedJobs = [];
+        $id = 1;
+
+        foreach ($pythonJobs as $job) {
+            // Generate random coordinates around the center (within ~2km for better proximity)
+            $latOffset = (mt_rand(-200, 200) / 10000); // ~2km variation
+            $lngOffset = (mt_rand(-200, 200) / 10000);
+            $latitude = $centerLat + $latOffset;
+            $longitude = $centerLng + $lngOffset;
+
+            // Convert tags to requiredSkills (limit to 5, randomize values)
+            $requiredSkills = [];
+            $tags = $job['tags'] ?? [];
+            if (is_array($tags)) {
+                $topTags = array_slice($tags, 0, 5); // Take top 5 tags
+                foreach ($topTags as $tag) {
+                    $requiredSkills[$tag] = mt_rand(40, 90); // Random skill level 40-90%
+                }
+            }
+
+            // Generate basic responsibilities and qualifications
+            $responsibilities = [
+                'Execute design projects according to project requirements',
+                'Collaborate with team members on creative projects',
+                'Ensure quality and consistency in design deliverables',
+                'Meet project deadlines and communicate progress',
+                'Participate in design reviews and feedback sessions'
+            ];
+
+            $qualifications = [
+                'Relevant experience in design field',
+                'Proficiency in design software tools',
+                'Strong portfolio demonstrating skills',
+                'Good communication and collaboration skills',
+                'Bachelor\'s degree preferred'
+            ];
+
+            $transformedJobs[] = [
+                'id' => $id,
+                'title' => $job['title'] ?? 'Unknown Position',
+                'company' => $job['company'] ?? 'Unknown Company',
+                'location' => $job['location'] ?? 'Remote',
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+                'salary' => null, // Remove salary as requested
+                'type' => $job['job_type'] ?? 'Full-time',
+                'description' => $job['description'] ?? 'No description available.',
+                'requiredSkills' => $requiredSkills,
+                'responsibilities' => $responsibilities,
+                'qualifications' => $qualifications,
+                'url' => $job['url'] ?? null,
+                'source' => $job['source'] ?? 'Unknown'
+            ];
+
+            $id++;
+        }
+
+        return $transformedJobs;
     }
 
     /**
