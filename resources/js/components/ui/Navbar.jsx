@@ -40,8 +40,8 @@ export default function Navbar() {
                                     to={item.path}
                                     className={`flex items-center space-x-1 px-4 py-2 rounded-lg transition-colors duration-200 ${
                                         active
-                                            ? 'bg-blue-100 text-blue-600'
-                                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                            ? 'bg-[#114124] text-white'
+                                            : 'text-gray-600 hover:bg-[#114124] hover:text-white'
                                     }`}
                                 >
                                     <Icon className="w-5 h-5" />
