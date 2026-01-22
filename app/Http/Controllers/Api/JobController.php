@@ -4,22 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Services\CareerJetService;
 
 class JobController extends Controller
 {
-    protected CareerJetService $careerJetService;
-
-    // Maximum jobs to return (conserve API quota - limit to 5)
+    // Maximum jobs to return
     protected int $maxResults = 5;
 
-    public function __construct(CareerJetService $careerJetService)
-    {
-        $this->careerJetService = $careerJetService;
-    }
-
     /**
-     * List jobs from CareerJet API with caching, fallback to mock data
+     * List jobs
      */
     public function index(Request $request)
     {
@@ -28,45 +20,27 @@ class JobController extends Controller
         $lat = (float) ($request->input('lat') ?? 14.5176); // Taguig default
         $lng = (float) ($request->input('lng') ?? 121.0509);
 
-        try {
-            // Try to fetch from CareerJet API (cached for 1 hour)
-            $apiJobs = $this->careerJetService->searchJobs($query, $city, $this->maxResults);
-            
-            // Map API response to our app format
-            $jobs = $this->careerJetService->mapJobsToAppFormat($apiJobs, $lat, $lng);
-
-            return response()->json([
-                'jobs' => $jobs,
-                'source' => 'careerjet',
-                'city' => $city,
-                'cached' => true // Results are cached for 1 hour
-            ]);
-
-        } catch (\Exception $e) {
-            // Fallback to mock data for demo
-            $jobs = $this->getMockJobs($city, $lat, $lng);
-            
-            // Filter by query if provided
-            if (!empty($query)) {
-                $jobs = array_filter($jobs, function($job) use ($query) {
-                    $queryLower = strtolower($query);
-                    return str_contains(strtolower($job['title']), $queryLower) ||
-                           str_contains(strtolower($job['company']), $queryLower) ||
-                           str_contains(strtolower($job['description']), $queryLower);
-                });
-                $jobs = array_values($jobs);
-            }
-
-            // Limit to max results
-            $jobs = array_slice($jobs, 0, $this->maxResults);
-
-            return response()->json([
-                'jobs' => $jobs,
-                'source' => 'mock',
-                'city' => $city,
-                'fallback_reason' => $e->getMessage()
-            ]);
+        $jobs = $this->getMockJobs($city, $lat, $lng);
+        
+        // Filter by query if provided
+        if (!empty($query)) {
+            $jobs = array_filter($jobs, function($job) use ($query) {
+                $queryLower = strtolower($query);
+                return str_contains(strtolower($job['title']), $queryLower) ||
+                       str_contains(strtolower($job['company']), $queryLower) ||
+                       str_contains(strtolower($job['description']), $queryLower);
+            });
+            $jobs = array_values($jobs);
         }
+
+        // Limit to max results
+        $jobs = array_slice($jobs, 0, $this->maxResults);
+
+        return response()->json([
+            'jobs' => $jobs,
+            'source' => 'mock',
+            'city' => $city
+        ]);
     }
 
     /**
@@ -74,12 +48,6 @@ class JobController extends Controller
      */
     public function show(string $id)
     {
-        // Check if it's a CareerJet job ID
-        if (str_starts_with($id, 'cj_')) {
-            // For CareerJet jobs, we don't have a detail endpoint
-            // Return the job from cache if available, or mock
-        }
-
         // Return mock job
         $mockJobs = $this->getMockJobs();
         $job = collect($mockJobs)->firstWhere('id', (int)$id);
