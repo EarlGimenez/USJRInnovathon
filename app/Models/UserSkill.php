@@ -12,6 +12,11 @@ class UserSkill extends Model
     protected $fillable = [
         'user_id',
         'name',
+        'rating',
+    ];
+
+    protected $casts = [
+        'rating' => 'integer',
     ];
 
     public function user(): BelongsTo

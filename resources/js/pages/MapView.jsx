@@ -9,7 +9,6 @@ import CourseCard from '../components/cards/CourseCard';
 import EventCard from '../components/cards/EventCard';
 import SkillProfileCard from '../components/cards/SkillProfileCard';
 import { useSkills } from '../context/SkillContext';
-import { generateMockJobs } from '../services/MockJobGenerator';
 
 // Default location: Cebu City (for USJR)
 const DEFAULT_LOCATION = { lat: 10.3157, lng: 123.8854, city: 'Cebu' };
@@ -57,15 +56,7 @@ export default function MapView() {
     // Fetch data when location or tab changes, or when search query changes
     useEffect(() => {
         if (!locationLoading) {
-            if (fromAgent && activeTab === 'jobs') {
-                // Use generated mock jobs for agent flow
-                const skillsToUse = agentData?.skills || userSkills;
-                const mockJobs = generateMockJobs(skillsToUse, 5);
-                setJobs(mockJobs);
-                setLoading(false);
-            } else {
-                fetchData();
-            }
+            fetchData();
         }
     }, [activeTab, seminarFilter, userCity, locationLoading, fromAgent, searchQuery]);
 
@@ -87,7 +78,7 @@ export default function MapView() {
                 try {
                     const response = await axios.get(
                         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10`,
-                        { headers: { 'User-Agent': 'SkillMatch Demo App' } }
+                        // { headers: { 'User-Agent': 'SkillMatch Demo App' } }
                     );
                     
                     const address = response.data.address;
@@ -121,12 +112,14 @@ export default function MapView() {
         
         try {
             if (activeTab === 'jobs') {
+                const skillsToUse = agentData?.skills || userSkills;
                 const response = await axios.get('/api/jobs', {
                     params: { 
                         query: searchQuery, 
                         city: userCity,
                         lat: mapCenter[0], 
-                        lng: mapCenter[1] 
+                        lng: mapCenter[1],
+                        candidate_skills: skillsToUse || undefined,
                     }
                 });
                 setJobs(response.data.jobs || []);
@@ -162,16 +155,10 @@ export default function MapView() {
             }
         } catch (error) {
             console.error('Error fetching data:', error);
-            // Use mock data for demo if API fails
-            if (activeTab === 'jobs') {
-                setJobs(getMockJobs());
-            } else if (activeTab === 'seminars') {
-                if (seminarFilter === 'in-person') {
-                    setEvents(getMockEvents());
-                } else {
-                    setCourses(getMockCourses());
-                }
-            }
+            setJobs([]);
+            setEvents([]);
+            setCourses([]);
+            setWeakSkills([]);
         }
         setLoading(false);
     };
@@ -188,11 +175,6 @@ export default function MapView() {
     const handleItemClick = (item) => {
         setSelectedItem(item);
         if (activeTab === 'jobs') {
-            // For mock jobs from agent flow, navigate to apply page
-            if (item.isMockData) {
-                handleApplyClick(item);
-                return;
-            }
             // Pass search context to job details
             navigate(`/job/${item.id}?query=${encodeURIComponent(searchQuery)}&city=${encodeURIComponent(userCity)}&lat=${mapCenter[0]}&lng=${mapCenter[1]}`);
         } else if (activeTab === 'seminars') {
@@ -207,16 +189,6 @@ export default function MapView() {
         }
     };
     
-    const handleApplyClick = (job) => {
-        // Navigate to apply page with job data
-        navigate('/apply', { 
-            state: { 
-                job,
-                agentSkills: agentData?.skills || userSkills
-            } 
-        });
-    };
-
     const handleMarkerClick = (item) => {
         setSelectedItem(item);
     };
@@ -300,7 +272,7 @@ export default function MapView() {
                             </div>
                             <div>
                                 <p className="font-medium text-sm">AI found {jobs.length} matching opportunities!</p>
-                                <p className="text-xs text-white/80">Click a job to apply with AI-generated cover letter</p>
+                                <p className="text-xs text-white/80">Click a job to view details</p>
                             </div>
                         </div>
                         <button 
@@ -444,29 +416,12 @@ export default function MapView() {
                                 {sortedItems.map(item => (
                                     <div key={item.id} className="relative">
                                         {activeTab === 'jobs' && (
-                                            <>
-                                                <ListingCard
-                                                    item={item}
-                                                    type="jobs"
-                                                    onClick={() => handleItemClick(item)}
-                                                    isSelected={selectedItem?.id === item.id}
-                                                />
-                                                {/* Apply button for mock jobs from agent */}
-                                                {item.isMockData && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleApplyClick(item);
-                                                        }}
-                                                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-1"
-                                                    >
-                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                                        </svg>
-                                                        Apply with AI
-                                                    </button>
-                                                )}
-                                            </>
+                                            <ListingCard
+                                                item={item}
+                                                type="jobs"
+                                                onClick={() => handleItemClick(item)}
+                                                isSelected={selectedItem?.id === item.id}
+                                            />
                                         )}
                                         {activeTab === 'seminars' && seminarFilter === 'in-person' && (
                                             <EventCard
@@ -551,314 +506,4 @@ export default function MapView() {
             </div>
         </div>
     );
-}
-
-// Mock data for demo purposes - Taguig/BGC locations
-function getMockJobs() {
-    return [
-        {
-            id: 1,
-            title: 'UX Designer',
-            company: 'Accenture Philippines',
-            location: 'BGC, Taguig',
-            latitude: 14.5512,
-            longitude: 121.0498,
-            salary: '₱45,000 - ₱65,000',
-            type: 'Full-time',
-            description: 'We are looking for a creative UX Designer to join our team at BGC...',
-            requiredSkills: { Design: 80, Prototyping: 70, Tools: 60, Research: 50, Communication: 65 }
-        },
-        {
-            id: 2,
-            title: 'Frontend Developer',
-            company: 'Globe Telecom',
-            location: 'The Globe Tower, BGC',
-            latitude: 14.5547,
-            longitude: 121.0462,
-            salary: '₱50,000 - ₱80,000',
-            type: 'Full-time',
-            description: 'Seeking experienced frontend developer proficient in React...',
-            requiredSkills: { Design: 50, Prototyping: 60, Tools: 85, Research: 40, Communication: 55 }
-        },
-        {
-            id: 3,
-            title: 'Product Manager',
-            company: 'Maya (PayMaya)',
-            location: 'Net One Center, BGC',
-            latitude: 14.5489,
-            longitude: 121.0505,
-            salary: '₱70,000 - ₱120,000',
-            type: 'Full-time',
-            description: 'Lead product development for fintech solutions...',
-            requiredSkills: { Design: 45, Prototyping: 55, Tools: 50, Research: 75, Communication: 85 }
-        },
-        {
-            id: 4,
-            title: 'Graphic Designer',
-            company: 'Canva Philippines',
-            location: 'High Street, BGC',
-            latitude: 14.5503,
-            longitude: 121.0451,
-            salary: '₱35,000 - ₱50,000',
-            type: 'Full-time',
-            description: 'Create visual content for marketing campaigns...',
-            requiredSkills: { Design: 90, Prototyping: 40, Tools: 75, Research: 30, Communication: 50 }
-        },
-        {
-            id: 5,
-            title: 'Junior Software Engineer',
-            company: 'Kalibrr',
-            location: 'Uptown BGC, Taguig',
-            latitude: 14.5565,
-            longitude: 121.0532,
-            salary: '₱30,000 - ₱45,000',
-            type: 'Full-time',
-            description: 'Entry level position for software development...',
-            requiredSkills: { Design: 35, Prototyping: 45, Tools: 60, Research: 35, Communication: 45 }
-        }
-    ];
-}
-
-function getMockSeminars() {
-    return [
-        {
-            id: 1,
-            title: 'Tech Workshop: Modern Web Development',
-            organizer: 'Google Developer Groups PH',
-            location: 'Mind Museum, BGC',
-            latitude: 14.5518,
-            longitude: 121.0465,
-            date: 'February 15, 2026',
-            time: '9:00 AM - 5:00 PM',
-            description: 'Hands-on workshop covering latest web technologies...',
-            skillBoosts: { Tools: 15, Prototyping: 10 },
-            attendees: 45,
-            maxAttendees: 100
-        },
-        {
-            id: 2,
-            title: 'Career Fair BGC 2026',
-            organizer: 'JobStreet Philippines',
-            location: 'SMX Convention Center, SM Aura',
-            latitude: 14.5449,
-            longitude: 121.0546,
-            date: 'January 25, 2026',
-            time: '10:00 AM - 6:00 PM',
-            description: 'Connect with top employers in Metro Manila...',
-            skillBoosts: { Communication: 10, Research: 8 },
-            attendees: 230,
-            maxAttendees: 500
-        },
-        {
-            id: 3,
-            title: 'Design Thinking Workshop',
-            organizer: 'UXPH (UX Philippines)',
-            location: 'WeWork, High Street South',
-            latitude: 14.5503,
-            longitude: 121.0451,
-            date: 'February 8, 2026',
-            time: '1:00 PM - 5:00 PM',
-            description: 'Learn design thinking methodologies...',
-            skillBoosts: { Design: 12, Research: 10, Prototyping: 8 },
-            attendees: 28,
-            maxAttendees: 50
-        },
-        {
-            id: 4,
-            title: 'Communication Masterclass',
-            organizer: 'Toastmasters BGC',
-            location: 'Shangri-La at The Fort, BGC',
-            latitude: 14.5535,
-            longitude: 121.0489,
-            date: 'February 22, 2026',
-            time: '2:00 PM - 6:00 PM',
-            description: 'Enhance your professional communication skills...',
-            skillBoosts: { Communication: 15 },
-            attendees: 55,
-            maxAttendees: 80
-        },
-        {
-            id: 5,
-            title: 'Figma & Prototyping Bootcamp',
-            organizer: 'Canva Philippines',
-            location: 'Globe Tower, BGC',
-            latitude: 14.5547,
-            longitude: 121.0462,
-            date: 'March 10, 2026',
-            time: '9:00 AM - 4:00 PM',
-            description: 'Intensive one-day bootcamp on Figma and prototyping...',
-            skillBoosts: { Prototyping: 18, Tools: 12, Design: 8 },
-            attendees: 15,
-            maxAttendees: 30
-        }
-    ];
-}
-
-// Mock events for Cebu area
-function getMockEvents() {
-    return [
-        {
-            id: 'cebu_1',
-            title: 'Cebu Tech Summit 2026',
-            organizer: 'Cebu IT-BPM Organization',
-            location: 'Waterfront Cebu City Hotel',
-            city: 'Cebu City',
-            latitude: 10.3157,
-            longitude: 123.8854,
-            date: 'February 20, 2026',
-            time: '9:00 AM - 6:00 PM',
-            description: 'The biggest technology conference in the Visayas region.',
-            price: '₱500',
-            isFree: false,
-            type: 'offline',
-            skillBoosts: { Tools: 10, Communication: 8 },
-            attendees: 150,
-            maxAttendees: 300
-        },
-        {
-            id: 'cebu_2',
-            title: 'Google Developer Group Cebu Meetup',
-            organizer: 'GDG Cebu',
-            location: 'The Company Cebu',
-            city: 'Cebu City',
-            latitude: 10.3190,
-            longitude: 123.8910,
-            date: 'January 28, 2026',
-            time: '6:00 PM - 9:00 PM',
-            description: 'Monthly meetup for developers. This month: Flutter Development Workshop.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Prototyping: 12, Tools: 10 },
-            attendees: 45,
-            maxAttendees: 80
-        },
-        {
-            id: 'cebu_3',
-            title: 'USJR Career Fair 2026',
-            organizer: 'USJR Office of Career Services',
-            location: 'University of San Jose-Recoletos',
-            city: 'Cebu City',
-            latitude: 10.2988,
-            longitude: 123.8914,
-            date: 'February 5, 2026',
-            time: '8:00 AM - 5:00 PM',
-            description: 'Annual career fair featuring top companies in Cebu.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Communication: 15, Research: 8 },
-            attendees: 320,
-            maxAttendees: 500
-        },
-        {
-            id: 'cebu_4',
-            title: 'UX/UI Design Workshop for Beginners',
-            organizer: 'UXPH Cebu',
-            location: 'aSpace Cebu',
-            city: 'Cebu City',
-            latitude: 10.3210,
-            longitude: 123.8990,
-            date: 'February 12, 2026',
-            time: '1:00 PM - 5:00 PM',
-            description: 'Hands-on workshop covering design fundamentals.',
-            price: '₱300',
-            isFree: false,
-            type: 'offline',
-            skillBoosts: { Design: 15, Prototyping: 12, Tools: 8 },
-            attendees: 25,
-            maxAttendees: 40
-        },
-        {
-            id: 'cebu_5',
-            title: 'Startup Cebu: Pitch Night',
-            organizer: 'Startup Cebu',
-            location: 'The Tide Coworking Space',
-            city: 'Cebu City',
-            latitude: 10.3120,
-            longitude: 123.8850,
-            date: 'January 30, 2026',
-            time: '6:00 PM - 9:00 PM',
-            description: 'Watch local startups pitch their ideas to investors.',
-            price: 'Free',
-            isFree: true,
-            type: 'offline',
-            skillBoosts: { Communication: 10, Research: 8 },
-            attendees: 60,
-            maxAttendees: 100
-        }
-    ];
-}
-
-// Mock courses
-function getMockCourses() {
-    return [
-        {
-            id: 'udemy_1',
-            title: 'Complete Web & Mobile Designer: UI/UX, Figma + more',
-            description: 'Become a UI/UX Designer. Learn modern web design.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=ui+ux+design',
-            price: '₱549',
-            isFree: false,
-            rating: 4.7,
-            reviews: 45000,
-            skill: 'Design'
-        },
-        {
-            id: 'coursera_1',
-            title: 'Google UX Design Professional Certificate',
-            description: 'Start your career in UX design with Google.',
-            provider: 'Coursera',
-            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
-            url: 'https://www.coursera.org/professional-certificates/google-ux-design',
-            price: 'Free to audit',
-            isFree: true,
-            rating: 4.8,
-            reviews: 52000,
-            skill: 'Design',
-            partner: 'Google'
-        },
-        {
-            id: 'udemy_2',
-            title: 'Communication Skills for Beginners',
-            description: 'Master professional communication in the workplace.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=communication+skills',
-            price: 'Free',
-            isFree: true,
-            rating: 4.4,
-            reviews: 15000,
-            skill: 'Communication'
-        },
-        {
-            id: 'coursera_2',
-            title: 'Improving Communication Skills',
-            description: 'Learn to communicate more effectively.',
-            provider: 'Coursera',
-            providerLogo: 'https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera.s3.amazonaws.com/media/coursera-logo-square.png',
-            url: 'https://www.coursera.org/learn/wharton-communication-skills',
-            price: 'Free to audit',
-            isFree: true,
-            rating: 4.7,
-            reviews: 28000,
-            skill: 'Communication',
-            partner: 'University of Pennsylvania'
-        },
-        {
-            id: 'udemy_3',
-            title: 'Figma UI UX Design Essentials',
-            description: 'Learn Figma for UI/UX Design from scratch.',
-            provider: 'Udemy',
-            providerLogo: 'https://www.udemy.com/staticx/udemy/images/v7/logo-udemy.svg',
-            url: 'https://www.udemy.com/courses/search/?q=figma',
-            price: '₱549',
-            isFree: false,
-            rating: 4.8,
-            reviews: 28000,
-            skill: 'Prototyping'
-        }
-    ];
 }

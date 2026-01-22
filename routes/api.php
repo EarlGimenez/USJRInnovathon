@@ -48,6 +48,9 @@ Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
 Route::post('/agent/match-score', [AgentMatchController::class, 'score']);
 Route::post('/agent/rank-jobs', [AgentJobRankController::class, 'rankJobs']);
 
+// Resume parsing
+Route::post('/resume/parse', [ResumeController::class, 'parse']);
+
 // Global canonical skills
 Route::get('/skills', [SkillController::class, 'index']);
 Route::get('/skills/{id}', [SkillController::class, 'show']);

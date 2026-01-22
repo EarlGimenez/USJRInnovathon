@@ -21,10 +21,7 @@ class JobController extends Controller
         $lat = (float) ($request->input('lat') ?? 14.5995); // Manila default
         $lng = (float) ($request->input('lng') ?? 120.9842);
 
-        $candidateSkills = $request->input('candidate_skills');
-        if (!is_array($candidateSkills)) {
-            $candidateSkills = null;
-        }
+        $candidateSkills = $this->normalizeCandidateSkillsInput($request->input('candidate_skills'));
 
         $similarityThreshold = (float) ($request->input('similarity_threshold') ?? 0.75);
 
@@ -53,10 +50,7 @@ class JobController extends Controller
         $lat = (float) ($request->input('lat') ?? 14.5995);
         $lng = (float) ($request->input('lng') ?? 120.9842);
 
-        $candidateSkills = $request->input('candidate_skills');
-        if (!is_array($candidateSkills)) {
-            $candidateSkills = null;
-        }
+        $candidateSkills = $this->normalizeCandidateSkillsInput($request->input('candidate_skills'));
 
         $similarityThreshold = (float) ($request->input('similarity_threshold') ?? 0.75);
 
@@ -91,9 +85,9 @@ class JobController extends Controller
     {
         try {
             // Keep automated tests fast and deterministic.
-            if (app()->environment('testing')) {
-                return $this->getMockJobs($location, $lat, $lng);
-            }
+            // if (app()->environment('testing')) {
+            //     return $this->getMockJobs($location, $lat, $lng);
+            // }
 
             // Path to Python script
             $scriptPath = base_path('python_scripts/job_listing_scraper.py');
@@ -102,25 +96,25 @@ class JobController extends Controller
             $command = "cd " . escapeshellarg(base_path()) . " && uv run python_scripts/job_listing_scraper.py " . escapeshellarg($jobTitle) . " " . escapeshellarg($location) . " 2>&1";
             $output = shell_exec($command);
 
-            if (!$output) {
-                // Fallback to mock data if script fails
-                return $this->getMockJobs($location, $lat, $lng);
-            }
+            // if (!$output) {
+            //     // Fallback to mock data if script fails
+            //     return $this->getMockJobs($location, $lat, $lng);
+            // }
 
             // Parse JSON output
             $jsonStart = strpos($output, '[');
-            if ($jsonStart === false) {
-                // Fallback to mock data if no JSON found
-                return $this->getMockJobs($location, $lat, $lng);
-            }
+            // if ($jsonStart === false) {
+            //     // Fallback to mock data if no JSON found
+            //     return $this->getMockJobs($location, $lat, $lng);
+            // }
 
             $jsonOutput = substr($output, $jsonStart);
             $pythonJobs = json_decode($jsonOutput, true);
 
-            if (!$pythonJobs || !is_array($pythonJobs)) {
-                // Fallback to mock data if JSON parsing fails
-                return $this->getMockJobs($location, $lat, $lng);
-            }
+            // if (!$pythonJobs || !is_array($pythonJobs)) {
+            //     // Fallback to mock data if JSON parsing fails
+            //     return $this->getMockJobs($location, $lat, $lng);
+            // }
 
             // Build requiredSkills using LLM extraction + cosine alignment (no randomization)
             foreach ($pythonJobs as $i => $job) {
@@ -161,7 +155,8 @@ class JobController extends Controller
 
         } catch (\Exception $e) {
             // Fallback to mock data on any error
-            return $this->getMockJobs($location, $lat, $lng);
+            // return $this->getMockJobs($location, $lat, $lng);
+            return $e->getMessage();
         }
     }
 
@@ -251,6 +246,110 @@ class JobController extends Controller
         }
 
         return $required;
+    }
+
+    /**
+     * Normalize candidate_skills input into the format expected by JobMatchService:
+     * array<int, array{skill:string, credential_count:int, experience_count:int}>
+     *
+     * Accepts:
+     * - null
+     * - string[]
+     * - map<string,int> (skill => rating)
+     * - array of arrays with 'skill'
+     */
+    private function normalizeCandidateSkillsInput(mixed $input): ?array
+    {
+        if (!is_array($input) || count($input) === 0) {
+            return null;
+        }
+
+        // Case A: string[]
+        $allStrings = true;
+        foreach ($input as $v) {
+            if (!is_string($v)) {
+                $allStrings = false;
+                break;
+            }
+        }
+        if ($allStrings) {
+            $out = [];
+            foreach ($input as $skill) {
+                $skill = trim((string) $skill);
+                if ($skill === '') {
+                    continue;
+                }
+                $out[] = [
+                    'skill' => $skill,
+                    'credential_count' => 1,
+                    'experience_count' => 0,
+                ];
+            }
+            return count($out) > 0 ? $out : null;
+        }
+
+        // Case B: map<string,int> (skill => rating)
+        $looksAssociative = array_keys($input) !== range(0, count($input) - 1);
+        if ($looksAssociative) {
+            $out = [];
+            foreach ($input as $skill => $rating) {
+                if (!is_string($skill)) {
+                    continue;
+                }
+                $skill = trim($skill);
+                if ($skill === '') {
+                    continue;
+                }
+
+                $level = is_numeric($rating) ? (int) $rating : 0;
+                if ($level < 0) {
+                    $level = 0;
+                }
+
+                $out[] = [
+                    'skill' => $skill,
+                    // Treat any provided skill as having some evidence.
+                    'credential_count' => $level > 0 ? 1 : 0,
+                    'experience_count' => 0,
+                ];
+            }
+
+            return count($out) > 0 ? $out : null;
+        }
+
+        // Case C: array of objects/arrays
+        $out = [];
+        foreach ($input as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $skill = $entry['skill'] ?? null;
+            if (!is_string($skill)) {
+                continue;
+            }
+            $skill = trim($skill);
+            if ($skill === '') {
+                continue;
+            }
+
+            $credentialCount = (int) ($entry['credential_count'] ?? 1);
+            $experienceCount = (int) ($entry['experience_count'] ?? 0);
+            if ($credentialCount < 0) {
+                $credentialCount = 0;
+            }
+            if ($experienceCount < 0) {
+                $experienceCount = 0;
+            }
+
+            $out[] = [
+                'skill' => $skill,
+                'credential_count' => $credentialCount,
+                'experience_count' => $experienceCount,
+            ];
+        }
+
+        return count($out) > 0 ? $out : null;
     }
 
     /**
