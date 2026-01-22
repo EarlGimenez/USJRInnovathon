@@ -105,7 +105,7 @@ export default function CourseCard({ course, onClick }) {
                 </div>
 
                 {/* Online Badge */}
-                <div className="absolute bottom-2 right-2 bg-blue-500 text-white px-2 py-0.5 rounded text-xs">
+                <div className="absolute bottom-2 right-2 bg-[#114124] text-white px-2 py-0.5 rounded text-xs">
                     Online
                 </div>
             </div>

@@ -44,6 +44,9 @@ Route::get('/courses', [CourseController::class, 'index']);
 Route::get('/courses/recommended', [CourseController::class, 'recommended']);
 Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
 
+// Resume parsing
+Route::post('/resume/parse', [ResumeController::class, 'parse']);
+
 // Agent triggers
 Route::post('/agent/match-score', [AgentMatchController::class, 'score']);
 Route::post('/agent/rank-jobs', [AgentJobRankController::class, 'rankJobs']);

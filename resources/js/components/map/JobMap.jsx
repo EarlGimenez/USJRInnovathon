@@ -170,6 +170,17 @@ export default function JobMap({ items, center, radiusKm = 3, onMarkerClick, sel
                 const marker = L.marker([item.latitude, item.longitude], { icon })
                     .addTo(mapInstanceRef.current);
 
+                // Add tooltip with title and location
+                const tooltipContent = type === 'jobs'
+                    ? `${item.title} - ${item.location}`
+                    : `${item.title} - ${item.location || item.city}`;
+
+                marker.bindTooltip(tooltipContent, {
+                    permanent: false,
+                    direction: 'top',
+                    offset: [0, -36]
+                });
+
                 // Create popup content
                 const popupContent = type === 'jobs'
                     ? `

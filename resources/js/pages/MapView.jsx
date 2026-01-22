@@ -24,8 +24,9 @@ export default function MapView() {
     
     const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' or 'seminars'
     const [seminarFilter, setSeminarFilter] = useState('in-person'); // 'in-person' or 'online'
-    const [searchQuery, setSearchQuery] = useState('Graphics designer'); // Default search
-    const [pendingSearchQuery, setPendingSearchQuery] = useState('Graphics designer'); // For input field
+    const [searchQuery, setSearchQuery] = useState(''); // Search query
+    const [pendingSearchQuery, setPendingSearchQuery] = useState(''); // For input field
+    const [savedJobsSearchQuery, setSavedJobsSearchQuery] = useState(''); // Saved jobs search when switching to seminars
     const [jobs, setJobs] = useState([]);
     const [seminars, setSeminars] = useState([]);
     const [events, setEvents] = useState([]);
@@ -37,6 +38,7 @@ export default function MapView() {
     const [radiusKm, setRadiusKm] = useState(3); // Keep UI + backend distance filtering in sync
     const [locationLoading, setLocationLoading] = useState(true);
     const [cacheStatus, setCacheStatus] = useState(''); // 'cached' or 'fresh'
+    const [weakSkills, setWeakSkills] = useState([]); // Skills that need improvement
     
     // Agent welcome banner state
     const [showAgentBanner, setShowAgentBanner] = useState(fromAgent);
@@ -539,6 +541,21 @@ export default function MapView() {
         return 'Search...';
     };
 
+    // Custom tab change handler that manages search query state
+    const handleTabChange = (newTab) => {
+        if (newTab === 'seminars' && activeTab === 'jobs') {
+            // Switching to seminars: save current jobs search and clear it
+            setSavedJobsSearchQuery(searchQuery);
+            setSearchQuery('');
+            setPendingSearchQuery('');
+        } else if (newTab === 'jobs' && activeTab === 'seminars') {
+            // Switching back to jobs: restore saved jobs search
+            setSearchQuery(savedJobsSearchQuery);
+            setPendingSearchQuery(savedJobsSearchQuery);
+        }
+        setActiveTab(newTab);
+    };
+
     if (skillsLoading || locationLoading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -591,7 +608,7 @@ export default function MapView() {
                         </p>
                         <ToggleTabs 
                             activeTab={activeTab}
-                            onTabChange={setActiveTab}
+                            onTabChange={handleTabChange}
                         />
                     </div>
                     <div className="flex gap-2">
@@ -624,7 +641,7 @@ export default function MapView() {
 
                         <button
                             onClick={handleSearchSubmit}
-                            className="px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all font-medium"
+                            className="px-4 py-2.5 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] focus:outline-none focus:ring-2 focus:ring-[#114124] focus:ring-offset-2 transition-all font-medium"
                         >
                             Search
                         </button>
@@ -697,7 +714,7 @@ export default function MapView() {
                                     <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
                                         cacheStatus === 'cached' 
                                             ? 'bg-green-100 text-green-700' 
-                                            : 'bg-blue-100 text-blue-700'
+                                            : 'bg-[#114124] text-white'
                                     }`}>
                                         {cacheStatus === 'cached' ? '⚡ Cached' : '🔄 Fresh'}
                                     </span>
@@ -726,7 +743,7 @@ export default function MapView() {
                                     <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
                                         cacheStatus === 'cached' 
                                             ? 'bg-green-100 text-green-700' 
-                                            : 'bg-blue-100 text-blue-700'
+                                            : 'bg-[#114124] text-white'
                                     }`}>
                                         {cacheStatus === 'cached' ? '⚡' : '🔄'}
                                     </span>
@@ -747,12 +764,29 @@ export default function MapView() {
                                 {sortedItems.map(item => (
                                     <div key={item.id} className="relative">
                                         {activeTab === 'jobs' && (
-                                            <ListingCard
-                                                item={item}
-                                                type="jobs"
-                                                onClick={() => handleItemClick(item)}
-                                                isSelected={selectedItem?.id === item.id}
-                                            />
+                                            <>
+                                                <ListingCard
+                                                    item={item}
+                                                    type="jobs"
+                                                    onClick={() => handleItemClick(item)}
+                                                    isSelected={selectedItem?.id === item.id}
+                                                />
+                                                {/* Apply button for mock jobs from agent */}
+                                                {item.isMockData && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleApplyClick(item);
+                                                        }}
+                                                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-[#114124] text-white text-xs font-medium rounded-lg hover:bg-[#0f3a1a] transition-colors shadow-sm flex items-center gap-1"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                                        </svg>
+                                                        Apply with AI
+                                                    </button>
+                                                )}
+                                            </>
                                         )}
                                         {activeTab === 'seminars' && seminarFilter === 'in-person' && (
                                             <EventCard
@@ -813,6 +847,34 @@ export default function MapView() {
                                     </div>
                                 )}
                                 
+                                {/* View More Links */}
+                                <div className="mt-6 space-y-3">
+                                    <p className="text-sm text-gray-500 mb-2">Browse more courses on:</p>
+                                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                                        <a 
+                                            href={`https://www.udemy.com/courses/search/?q=${encodeURIComponent(searchQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                                        >
+                                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 0L1.608 6v12L12 24l10.392-6V6L12 0zm-1.524 17.462H8.618V9.59l1.858-1.054v8.926zm4.478 0h-1.857V8.536l1.857-1.054v10.98z"/>
+                                            </svg>
+                                            View on Udemy
+                                        </a>
+                                        <a 
+                                            href={`https://www.coursera.org/search?query=${encodeURIComponent(searchQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#114124] text-white rounded-lg hover:bg-[#0f3a1a] transition-colors font-medium"
+                                        >
+                                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M11.374 23.977c-4.027-.251-7.64-2.509-9.94-6.104C-.881 14.058-.368 9.102 1.979 5.335a12.072 12.072 0 015.463-4.883C9.71-.486 12.542-.491 14.87.576c2.012.922 3.607 2.362 4.857 4.17.127.184-.11.48-.32.402-2.94-1.1-5.614-.654-7.955 1.356-1.953 1.677-2.782 3.859-2.47 6.343.316 2.514 1.54 4.454 3.592 5.908 1.25.884 2.63 1.398 4.138 1.586.233.029.319.15.3.343a12.075 12.075 0 01-1.257 3.67c-.125.234-.315.412-.532.529-.67.36-1.397.498-2.14.576-.498.053-.5.052-.709-.019z"/>
+                                            </svg>
+                                            View on Coursera
+                                        </a>
+                                    </div>
+                                </div>
 
                             </div>
                         </div>

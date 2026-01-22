@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useSkills } from '../context/SkillContext';
 
@@ -7,10 +7,11 @@ export default function JobDetails() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const location = useLocation();
     const { userSkills, calculateMatchPercentage } = useSkills();
     
-    const [job, setJob] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [job, setJob] = useState(location.state?.job || null);
+    const [loading, setLoading] = useState(!job);
     const [error, setError] = useState(null);
 
     const normalizeSkillsForApi = (skills) => {
@@ -101,6 +102,12 @@ export default function JobDetails() {
     }, [id, userSkills]);
 
     const fetchJobDetails = async () => {
+        // If we already have job data from navigation state, try to fetch additional details
+        if (job) {
+            setLoading(false);
+            return;
+        }
+        
         setLoading(true);
         setError(null);
         try {
@@ -129,6 +136,10 @@ export default function JobDetails() {
             console.error('Error fetching job details:', error);
             setJob(null);
             setError('Unable to load job details right now.');
+            // Only use mock data if we don't have job data from navigation state
+            if (!job) {
+                setJob(getMockJob(id));
+            }
         }
         setLoading(false);
     };
