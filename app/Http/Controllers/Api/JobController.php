@@ -4,56 +4,67 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use App\Services\AdzunaService;
+use App\Services\CareerJetService;
 
 class JobController extends Controller
 {
-    protected $adzunaService;
+    protected CareerJetService $careerJetService;
 
-    // Skill mapping based on job categories
-    protected $categorySkillMap = [
-        'it-jobs' => ['Design' => 40, 'Prototyping' => 50, 'Tools' => 85, 'Research' => 45, 'Communication' => 55],
-        'engineering-jobs' => ['Design' => 60, 'Prototyping' => 70, 'Tools' => 80, 'Research' => 65, 'Communication' => 50],
-        'creative-design-jobs' => ['Design' => 90, 'Prototyping' => 75, 'Tools' => 70, 'Research' => 50, 'Communication' => 60],
-        'marketing-jobs' => ['Design' => 55, 'Prototyping' => 35, 'Tools' => 50, 'Research' => 70, 'Communication' => 85],
-        'sales-jobs' => ['Design' => 30, 'Prototyping' => 25, 'Tools' => 45, 'Research' => 55, 'Communication' => 90],
-        'admin-jobs' => ['Design' => 35, 'Prototyping' => 30, 'Tools' => 60, 'Research' => 50, 'Communication' => 70],
-        'default' => ['Design' => 50, 'Prototyping' => 50, 'Tools' => 50, 'Research' => 50, 'Communication' => 50],
-    ];
+    // Maximum jobs to return (conserve API quota - limit to 5)
+    protected int $maxResults = 5;
 
-    public function __construct(AdzunaService $adzunaService)
+    public function __construct(CareerJetService $careerJetService)
     {
-        $this->adzunaService = $adzunaService;
+        $this->careerJetService = $careerJetService;
     }
 
     /**
-     * List jobs (from Adzuna API or mock data)
+     * List jobs from CareerJet API with caching, fallback to mock data
      */
     public function index(Request $request)
     {
-        $query = $request->input('query', '');
-        $lat = $request->input('lat', 10.3157); // Cebu City default
-        $lng = $request->input('lng', 123.8854);
+        $query = $request->input('query') ?? '';
+        $city = $request->input('city') ?? 'Taguig';
+        $lat = (float) ($request->input('lat') ?? 14.5176); // Taguig default
+        $lng = (float) ($request->input('lng') ?? 121.0509);
 
         try {
-            // Try to fetch from Adzuna API
-            $jobs = $this->adzunaService->searchJobs($query, $lat, $lng);
+            // Try to fetch from CareerJet API (cached for 1 hour)
+            $apiJobs = $this->careerJetService->searchJobs($query, $city, $this->maxResults);
             
-            // Map API response to our format with skill requirements
-            $mappedJobs = collect($jobs)->map(function ($job) {
-                return $this->mapJobToFormat($job);
-            })->values()->all();
+            // Map API response to our app format
+            $jobs = $this->careerJetService->mapJobsToAppFormat($apiJobs, $lat, $lng);
 
             return response()->json([
-                'jobs' => $mappedJobs,
-                'source' => 'adzuna'
+                'jobs' => $jobs,
+                'source' => 'careerjet',
+                'city' => $city,
+                'cached' => true // Results are cached for 1 hour
             ]);
+
         } catch (\Exception $e) {
-            // Fallback to mock data
+            // Fallback to mock data for demo
+            $jobs = $this->getMockJobs($city, $lat, $lng);
+            
+            // Filter by query if provided
+            if (!empty($query)) {
+                $jobs = array_filter($jobs, function($job) use ($query) {
+                    $queryLower = strtolower($query);
+                    return str_contains(strtolower($job['title']), $queryLower) ||
+                           str_contains(strtolower($job['company']), $queryLower) ||
+                           str_contains(strtolower($job['description']), $queryLower);
+                });
+                $jobs = array_values($jobs);
+            }
+
+            // Limit to max results
+            $jobs = array_slice($jobs, 0, $this->maxResults);
+
             return response()->json([
-                'jobs' => $this->getMockJobs(),
+                'jobs' => $jobs,
                 'source' => 'mock',
-                'error' => $e->getMessage()
+                'city' => $city,
+                'fallback_reason' => $e->getMessage()
             ]);
         }
     }
@@ -63,21 +74,20 @@ class JobController extends Controller
      */
     public function show(string $id)
     {
-        try {
-            $job = $this->adzunaService->getJob($id);
-            
-            if ($job) {
-                return response()->json([
-                    'job' => $this->mapJobToFormat($job, true)
-                ]);
-            }
-        } catch (\Exception $e) {
-            // Fallback to mock
+        // Check if it's a CareerJet job ID
+        if (str_starts_with($id, 'cj_')) {
+            // For CareerJet jobs, we don't have a detail endpoint
+            // Return the job from cache if available, or mock
         }
 
         // Return mock job
         $mockJobs = $this->getMockJobs();
         $job = collect($mockJobs)->firstWhere('id', (int)$id);
+
+        if (!$job) {
+            // Try to find by string ID
+            $job = collect($mockJobs)->firstWhere('id', $id);
+        }
 
         if (!$job) {
             $job = $mockJobs[0] ?? null;
@@ -89,72 +99,21 @@ class JobController extends Controller
     }
 
     /**
-     * Map Adzuna API response to our format
+     * Mock job data for demo/fallback - Taguig/BGC locations
      */
-    protected function mapJobToFormat(array $job, bool $detailed = false): array
-    {
-        $category = $job['category']['tag'] ?? 'default';
-        $requiredSkills = $this->categorySkillMap[$category] ?? $this->categorySkillMap['default'];
-
-        // Add some randomness to make it interesting
-        foreach ($requiredSkills as $skill => $value) {
-            $requiredSkills[$skill] = max(20, min(95, $value + rand(-15, 15)));
-        }
-
-        $mapped = [
-            'id' => $job['id'] ?? uniqid(),
-            'title' => $job['title'] ?? 'Unknown Position',
-            'company' => $job['company']['display_name'] ?? 'Company',
-            'location' => $job['location']['display_name'] ?? 'Cebu City',
-            'latitude' => $job['latitude'] ?? 10.3157 + (rand(-100, 100) / 10000),
-            'longitude' => $job['longitude'] ?? 123.8854 + (rand(-100, 100) / 10000),
-            'salary' => isset($job['salary_min']) 
-                ? '₱' . number_format($job['salary_min']) . ' - ₱' . number_format($job['salary_max'] ?? $job['salary_min'])
-                : null,
-            'type' => $job['contract_time'] ?? 'Full-time',
-            'description' => $job['description'] ?? 'No description available.',
-            'requiredSkills' => $requiredSkills,
-            'category' => $job['category']['label'] ?? 'General',
-            'created_at' => $job['created'] ?? now()->toIso8601String(),
-            'redirect_url' => $job['redirect_url'] ?? null,
-        ];
-
-        if ($detailed) {
-            $mapped['responsibilities'] = [
-                'Perform job duties as outlined in the description',
-                'Collaborate with team members and stakeholders',
-                'Meet deadlines and quality standards',
-                'Continuous learning and improvement',
-                'Report to management on progress'
-            ];
-            $mapped['qualifications'] = [
-                'Relevant experience in the field',
-                'Strong communication skills',
-                'Ability to work independently and in teams',
-                'Problem-solving mindset',
-                'Bachelor\'s degree or equivalent experience'
-            ];
-        }
-
-        return $mapped;
-    }
-
-    /**
-     * Mock job data for demo/fallback
-     */
-    protected function getMockJobs(): array
+    protected function getMockJobs(string $city = 'Taguig', float $centerLat = 14.5176, float $centerLng = 121.0509): array
     {
         return [
             [
                 'id' => 1,
                 'title' => 'UX Designer',
-                'company' => 'TechCorp Cebu',
-                'location' => 'IT Park, Cebu City',
-                'latitude' => 10.3301,
-                'longitude' => 123.9056,
-                'salary' => '₱35,000 - ₱50,000',
+                'company' => 'Accenture Philippines',
+                'location' => 'BGC, Taguig',
+                'latitude' => 14.5512,
+                'longitude' => 121.0498,
+                'salary' => '₱45,000 - ₱65,000',
                 'type' => 'Full-time',
-                'description' => 'We are looking for a creative UX Designer to join our team. You will be responsible for creating intuitive user experiences for web and mobile applications.',
+                'description' => 'We are looking for a creative UX Designer to join our team at BGC. You will be responsible for creating intuitive user experiences for enterprise web and mobile applications.',
                 'requiredSkills' => ['Design' => 80, 'Prototyping' => 70, 'Tools' => 60, 'Research' => 50, 'Communication' => 65],
                 'responsibilities' => [
                     'Create user flows, wireframes, and prototypes',
@@ -174,13 +133,13 @@ class JobController extends Controller
             [
                 'id' => 2,
                 'title' => 'Frontend Developer',
-                'company' => 'WebStudio Inc.',
-                'location' => 'Ayala Center, Cebu',
-                'latitude' => 10.3181,
-                'longitude' => 123.9050,
-                'salary' => '₱40,000 - ₱60,000',
+                'company' => 'Globe Telecom',
+                'location' => 'The Globe Tower, BGC',
+                'latitude' => 14.5547,
+                'longitude' => 121.0462,
+                'salary' => '₱50,000 - ₱80,000',
                 'type' => 'Full-time',
-                'description' => 'Seeking experienced frontend developer proficient in React to build modern web applications.',
+                'description' => 'Seeking experienced frontend developer proficient in React to build modern web applications for Globe\'s digital products.',
                 'requiredSkills' => ['Design' => 50, 'Prototyping' => 60, 'Tools' => 85, 'Research' => 40, 'Communication' => 55],
                 'responsibilities' => [
                     'Develop responsive web applications using React',
@@ -200,13 +159,13 @@ class JobController extends Controller
             [
                 'id' => 3,
                 'title' => 'Product Manager',
-                'company' => 'StartupHub',
-                'location' => 'Mandaue City',
-                'latitude' => 10.3236,
-                'longitude' => 123.9223,
-                'salary' => '₱50,000 - ₱80,000',
+                'company' => 'Maya (PayMaya)',
+                'location' => 'Net One Center, BGC',
+                'latitude' => 14.5489,
+                'longitude' => 121.0505,
+                'salary' => '₱70,000 - ₱120,000',
                 'type' => 'Full-time',
-                'description' => 'Lead product development and work with cross-functional teams to deliver amazing products.',
+                'description' => 'Lead product development for Maya\'s fintech solutions and work with cross-functional teams to deliver innovative financial products.',
                 'requiredSkills' => ['Design' => 45, 'Prototyping' => 55, 'Tools' => 50, 'Research' => 75, 'Communication' => 85],
                 'responsibilities' => [
                     'Define product vision and roadmap',
@@ -220,19 +179,19 @@ class JobController extends Controller
                     'Strong analytical and strategic thinking',
                     'Experience with agile methodologies',
                     'Excellent presentation skills',
-                    'Technical background preferred'
+                    'Fintech background preferred'
                 ]
             ],
             [
                 'id' => 4,
                 'title' => 'Graphic Designer',
-                'company' => 'Creative Agency',
-                'location' => 'Lahug, Cebu City',
-                'latitude' => 10.3256,
-                'longitude' => 123.8892,
-                'salary' => '₱25,000 - ₱35,000',
-                'type' => 'Part-time',
-                'description' => 'Create visual content for marketing campaigns and brand materials.',
+                'company' => 'Canva Philippines',
+                'location' => 'High Street, BGC',
+                'latitude' => 14.5503,
+                'longitude' => 121.0451,
+                'salary' => '₱35,000 - ₱50,000',
+                'type' => 'Full-time',
+                'description' => 'Create visual content for marketing campaigns and product design at Canva\'s growing BGC office.',
                 'requiredSkills' => ['Design' => 90, 'Prototyping' => 40, 'Tools' => 75, 'Research' => 30, 'Communication' => 50],
                 'responsibilities' => [
                     'Design marketing collaterals',
@@ -243,7 +202,7 @@ class JobController extends Controller
                 ],
                 'qualifications' => [
                     '1+ years of graphic design experience',
-                    'Proficiency in Adobe Creative Suite',
+                    'Proficiency in design tools (Canva, Adobe Suite)',
                     'Strong visual design skills',
                     'Attention to detail',
                     'Portfolio required'
@@ -251,17 +210,17 @@ class JobController extends Controller
             ],
             [
                 'id' => 5,
-                'title' => 'Junior Web Developer',
-                'company' => 'Digital Solutions',
-                'location' => 'Banilad, Cebu City',
-                'latitude' => 10.3422,
-                'longitude' => 123.9102,
-                'salary' => '₱20,000 - ₱30,000',
+                'title' => 'Junior Software Engineer',
+                'company' => 'Kalibrr',
+                'location' => 'Uptown BGC, Taguig',
+                'latitude' => 14.5565,
+                'longitude' => 121.0532,
+                'salary' => '₱30,000 - ₱45,000',
                 'type' => 'Full-time',
-                'description' => 'Entry level position for web development. Great opportunity to learn and grow.',
+                'description' => 'Entry level position for software development. Great opportunity to learn and grow in a fast-paced startup environment.',
                 'requiredSkills' => ['Design' => 35, 'Prototyping' => 45, 'Tools' => 60, 'Research' => 35, 'Communication' => 45],
                 'responsibilities' => [
-                    'Assist in web development projects',
+                    'Assist in software development projects',
                     'Learn from senior developers',
                     'Write and test code',
                     'Fix bugs and issues',
@@ -269,7 +228,7 @@ class JobController extends Controller
                 ],
                 'qualifications' => [
                     'Fresh graduate or 0-1 year experience',
-                    'Knowledge of HTML, CSS, JavaScript',
+                    'Knowledge of Python, JavaScript, or PHP',
                     'Eager to learn new technologies',
                     'Good communication skills',
                     'Computer Science degree or bootcamp graduate'
