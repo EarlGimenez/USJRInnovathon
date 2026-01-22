@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\AgentJobRankController;
 use App\Http\Controllers\Api\ResumeController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SkillController;
+use App\Http\Controllers\Api\UserSkillController;
 use App\Http\Controllers\Api\CredentialController;
 
 /*
@@ -46,4 +47,15 @@ Route::get('/courses/skill/{skill}', [CourseController::class, 'bySkill']);
 // Agent triggers
 Route::post('/agent/match-score', [AgentMatchController::class, 'score']);
 Route::post('/agent/rank-jobs', [AgentJobRankController::class, 'rankJobs']);
+
+// Global canonical skills
+Route::get('/skills', [SkillController::class, 'index']);
+Route::get('/skills/{id}', [SkillController::class, 'show']);
+
+// User skills
+Route::get('/users/{userId}/skills', [UserSkillController::class, 'index']);
+Route::post('/users/{userId}/skills', [UserSkillController::class, 'store']);
+Route::post('/users/{userId}/skills/bulk', [UserSkillController::class, 'bulkStore']);
+Route::put('/users/{userId}/skills/{skillId}', [UserSkillController::class, 'update']);
+Route::delete('/users/{userId}/skills/{skillId}', [UserSkillController::class, 'destroy']);
 
